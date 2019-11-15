@@ -5,10 +5,11 @@
 \title{Predicts IDA efficacies for 2-Drug Combinations}
 \usage{
 IDAPredict.2drug(Monotherapy_Data, Cell_Line_Name_Column, Drug_Name_Column,
-  Drug_Concentration_Column, Efficacy_Column, LowerEfficacyIsBetterDrugEffect,
-  EfficacyMetricName = "Efficacy", Drug1, Drug2,
-  Calculate_Uncertainty = FALSE, Efficacy_SE_Column = NULL,
-  n_Simulations = 1000, CalculateIDAComboscoreAndHazardRatios = FALSE,
+  Drug_Concentration_Column, Efficacy_Column,
+  LowerEfficacyIsBetterDrugEffect, EfficacyMetricName = "Efficacy",
+  Drug1, Drug2, Calculate_Uncertainty = FALSE,
+  Efficacy_SE_Column = NULL, n_Simulations = 1000,
+  CalculateIDAComboscoreAndHazardRatios = FALSE,
   Average_Duplicate_Records = FALSE)
 }
 \arguments{
