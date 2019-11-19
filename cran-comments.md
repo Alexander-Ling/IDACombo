@@ -7,4 +7,7 @@
 
 0 errors | 0 warnings | 1 note
 
+The note is about possibly mis-spelled words in DESCRIPTION: "efficacies"" and "monotherapy".
+These words are not mis-spelled.
+    
 * This is a new release.
