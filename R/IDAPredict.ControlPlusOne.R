@@ -1,0 +1,716 @@
+#' Predicts IDA efficacies for combinations of a control therapy plus a one additional drug
+#'
+#' This function creates efficacy predictions for combinations of a control therapy + 1 additional drug using monotherapy efficacy data and the assumptions of independent drug action. When data is available for multiple concentrations of the drug to add, efficacy predictions are made for all possible concentration combinations.
+#'
+#' @importFrom stats complete.cases rnorm sd aggregate
+#'
+#' @param Monotherapy_Data A data frame where each row contains information about the response of a single cell line to a single drug at a single concentration. Must minimally include columns containing the following information: cell line name, drug name, drug concentration, and measured drug efficacy. May optionally include a column recording the standard error (SE) of the measured drug efficacy.
+#' @param Cell_Line_Name_Column A character vector of length 1 containing the name of the column in the Monotherapy_Data data frame which contains cell line names.
+#' @param Drug_Name_Column A character vector of length 1 containing the name of the column in the Monotherapy_Data data frame which contains drug names.
+#' @param Drug_Concentration_Column A character vector of length 1 containing the name of the column in the Monotherapy_Data data frame which contains drug concentrations.
+#' @param Efficacy_Column A character vector of length 1 containing the name of the column in the Monotherapy_Data data frame which contains measured drug efficacies (i.e. percent Viability, percent Cell Growth, etc.).
+#' @param LowerEfficacyIsBetterDrugEffect A logic vector of length 1 indicating whether or not lower values in Efficacy_Column indicate a more effective drug effect (i.e. for percent viability). Set TRUE if so. Otherwise, set FALSE if higher values in Efficacy_Column indicate a more effective drug response (i.e. for percent cell death).
+#' @param EfficacyMetricName A character vector of length 1 indicating the name of the efficacy metric being used (i.e. Percent_Viability, Percent_Growth, etc.). Used to correctly label column names in output. Defaults to "Efficacy".
+#' @param Control_Treatment_Drugs A character vector of length > 0 containing the names of the drugs in the control drug treatment for which efficacy predictions are to be made.
+#' @param Control_Treatment_Drug_Concentrations A vector of drug concentrations for Control_Treatment_Drugs with the first concentration in Control_Treatment_Drug_Concentrations corresponding to the first drug in Control_Treatment_Drugs etc. Only one concentration may be specified for each drug in the control treatment, but, if a drug is included in both the control and test treatments, there is no need for the same concentration of that drug to be used in both treatments.
+#' @param Drug_to_Add A character vector of length 1 containing the name of the drug to add to the control treatment to create a new drug combination for which efficacy predictions are to be made.
+#' @param Calculate_Uncertainty A logic vector of length one indicating whether or not a Monte Carlo simulation should be performed to estimate uncertainties in the efficacy predictions based on uncertainties in the monotherapy efficacy measurements. Set TRUE if you wish to calculate uncertainties. Defaults to FALSE.
+#' @param Efficacy_SE_Column A character vector of length 1 containing the name of the column in the Monotherapy_Data data frame which contains the standard errors of measured drug efficacies. Must be specified if Calculate_Uncertainty is set to TRUE.
+#' @param n_Simulations A positive, non-zero integer vector of length 1 indicating the number of Monte Carlo iterations to be run when calculating output efficacy prediction uncertainties. Must be specified if Calculate_Uncertainty is set to TRUE. Defaults to 1000.
+#' @param CalculateIDAComboscoreAndHazardRatios A logic vector of length 1 indicating whether or not IDA-Comboscores and Hazard Ratios (HRs) should be calculated between monotherapies and the drug combination. Set TRUE if so. Should only be set to TRUE for efficacy metrics that range between 0 and 1 (i.e. percent viability). Defaults to FALSE.
+#' @param Average_Duplicate_Records A logic vector of length 1 indicating whether or not duplicated records (where a cell line has multiple records for being tested with a given drug at a given concentration) should be averaged. If TRUE, Efficacy values are averaged, and, if Calculate_Uncertainty is also TRUE, Efficacy_SE values are added in quadrature and divided by the number of duplicate records for that cell line/drug/concentration set.
+#'
+#' @return Returns a list with 4 elements: 1) A data frame with the produced efficacy predictions. 2) A character string indicating the control treatment drugs (separated by +). 3) A character string indicating the name of drug to be added to the control treatment to make a new combination. 4) A character vector containing the names of the cell lines used to make the efficacy predictions.
+#'
+#' @examples
+#' #Loading Package
+#'   library(IDACombo)
+#'
+#' #Making fake monotherapy dataset
+#'   CellLineNames <- rep(c("CL1", "CL2", "CL3", "CL4", "CL5", "CL6"), 6)
+#'   DrugNames <- c(rep("D1", 12), rep("D2", 12), rep("D3", 12))
+#'   Concentrations <- c(rep(1, 6), rep(2, 6), rep("1.5", 6), rep("3", 6), rep("1.5", 6), rep("3", 6))
+#'   Viability <- c(sample(seq(0.4,1,length.out = 10), 6, replace = TRUE),
+#'                  sample(seq(0.2,0.8,length.out = 10), 6, replace = TRUE),
+#'                  sample(seq(0.4,1,length.out = 10), 6, replace = TRUE),
+#'                  sample(seq(0.2,0.6,length.out = 10), 6, replace = TRUE),
+#'                  sample(seq(0.38,1,length.out = 10), 6, replace = TRUE),
+#'                  sample(seq(0.18,0.6,length.out = 10), 6, replace = TRUE))
+#'   Viability_SE <- Viability * sample(seq(0,0.1,length.out = 100), 36, replace = TRUE)
+#'   Fake_Data <- data.frame(CellLineNames, DrugNames, Concentrations, Viability, Viability_SE)
+#'
+#' #Creating efficacy predictions for D1+D2 + D3 without uncertainty calculations
+#'   IDAPredict.ControlPlusOne(Monotherapy_Data = Fake_Data,
+#'                    Cell_Line_Name_Column = "CellLineNames",
+#'                    Drug_Name_Column = "DrugNames",
+#'                    Drug_Concentration_Column = "Concentrations",
+#'                    Efficacy_Column = "Viability",
+#'                    Control_Treatment_Drugs = c("D1", "D2"),
+#'                    Control_Treatment_Drug_Concentrations = c(1, 3),
+#'                    Drug_to_Add = "D3",
+#'                    Calculate_Uncertainty = FALSE,
+#'                    LowerEfficacyIsBetterDrugEffect = TRUE,
+#'                    EfficacyMetricName = "Viability",
+#'                    CalculateIDAComboscoreAndHazardRatios = TRUE,
+#'                    Average_Duplicate_Records = FALSE)
+#'
+#' #Creating efficacy predictions for D1+D2 + D3 with uncertainty calculations
+#'   IDAPredict.ControlPlusOne(Monotherapy_Data = Fake_Data,
+#'                    Cell_Line_Name_Column = "CellLineNames",
+#'                    Drug_Name_Column = "DrugNames",
+#'                    Drug_Concentration_Column = "Concentrations",
+#'                    Efficacy_Column = "Viability",
+#'                    Control_Treatment_Drugs = c("D1", "D2"),
+#'                    Control_Treatment_Drug_Concentrations = c(1, 3),
+#'                    Drug_to_Add = "D3",
+#'                    Calculate_Uncertainty = TRUE,
+#'                    Efficacy_SE_Column = "Viability_SE",
+#'                    LowerEfficacyIsBetterDrugEffect = TRUE,
+#'                    EfficacyMetricName = "Viability",
+#'                    CalculateIDAComboscoreAndHazardRatios = TRUE,
+#'                    Average_Duplicate_Records = FALSE)
+#'
+#' #Converting Viabilty to reduction in viability and redoing calculations
+#' #Note the change in the LowerEfficacyIsBetterDrugEffect flag from TRUE to FALSE
+#'   Reduction_in_Viability <- 1-Viability
+#'   Reduction_in_Viability_SE <- Viability_SE
+#'   Fake_Data <- data.frame(CellLineNames,
+#'                           DrugNames,
+#'                           Concentrations,
+#'                           Reduction_in_Viability,
+#'                           Reduction_in_Viability_SE)
+#'   IDAPredict.ControlPlusOne(Monotherapy_Data = Fake_Data,
+#'                    Cell_Line_Name_Column = "CellLineNames",
+#'                    Drug_Name_Column = "DrugNames",
+#'                    Drug_Concentration_Column = "Concentrations",
+#'                    Efficacy_Column = "Reduction_in_Viability",
+#'                    Control_Treatment_Drugs = c("D1", "D2"),
+#'                    Control_Treatment_Drug_Concentrations = c(1, 3),
+#'                    Drug_to_Add = "D3",
+#'                    Calculate_Uncertainty = TRUE,
+#'                    LowerEfficacyIsBetterDrugEffect = FALSE,
+#'                    Efficacy_SE_Column = "Reduction_in_Viability_SE",
+#'                    EfficacyMetricName = "Reduction_In_Viability",
+#'                    CalculateIDAComboscoreAndHazardRatios = TRUE,
+#'                    Average_Duplicate_Records = FALSE)
+#'
+#' #Changing efficacy metric to percent growth (range -1 to 1)
+#' #Note that calculating Hazard Ratios and IDA-Comboscores is no longer valid, so
+#' #CalculateIDAComboscoreAndHazardRatios is set to FALSE.
+#'   Percent_Growth <- c(sample(seq(0.4,1,length.out = 10), 6, replace = TRUE),
+#'                       sample(seq(-0.4,0.2,length.out = 10), 6, replace = TRUE),
+#'                       sample(seq(-0.2,0.3,length.out = 10), 6, replace = TRUE),
+#'                       sample(seq(-1,0.2,length.out = 10), 6, replace = TRUE),
+#'                       sample(seq(-0.22,0.28,length.out = 10), 6, replace = TRUE),
+#'                       sample(seq(-1,0.1,length.out = 10), 6, replace = TRUE))
+#'   Percent_Growth_SE <- abs(Percent_Growth * sample(seq(0,0.1,length.out = 100), 36, replace = TRUE))
+#'   Fake_Data <- data.frame(CellLineNames,
+#'                           DrugNames,
+#'                           Concentrations,
+#'                           Percent_Growth,
+#'                           Percent_Growth_SE)
+#'   IDAPredict.ControlPlusOne(Monotherapy_Data = Fake_Data,
+#'                    Cell_Line_Name_Column = "CellLineNames",
+#'                    Drug_Name_Column = "DrugNames",
+#'                    Drug_Concentration_Column = "Concentrations",
+#'                    Efficacy_Column = "Percent_Growth",
+#'                    Control_Treatment_Drugs = c("D1", "D2"),
+#'                    Control_Treatment_Drug_Concentrations = c(1, 3),
+#'                    Drug_to_Add = "D3",
+#'                    Calculate_Uncertainty = TRUE,
+#'                    LowerEfficacyIsBetterDrugEffect = TRUE,
+#'                    Efficacy_SE_Column = "Percent_Growth_SE",
+#'                    CalculateIDAComboscoreAndHazardRatios = FALSE,
+#'                    EfficacyMetricName = "Percent_Growth",
+#'                    Average_Duplicate_Records = FALSE)
+#'
+#' #Adding duplicate records for each cell line, and showing behavior with
+#' #Average_Duplicate_Records = FALSE. Should produce warning messages that
+#' #duplicates were found and removed.
+#'   Percent_Growth <- c(sample(seq(0.4,1,length.out = 10), 6, replace = TRUE),
+#'                       sample(seq(-0.4,0.2,length.out = 10), 6, replace = TRUE),
+#'                       sample(seq(-0.2,0.3,length.out = 10), 6, replace = TRUE),
+#'                       sample(seq(-1,0.2,length.out = 10), 6, replace = TRUE),
+#'                       sample(seq(-0.22,0.28,length.out = 10), 6, replace = TRUE),
+#'                       sample(seq(-1,0.1,length.out = 10), 6, replace = TRUE))
+#'   Percent_Growth_SE <- abs(Percent_Growth * sample(seq(0,0.1,length.out = 100), 36, replace = TRUE))
+#'   Fake_Data_to_add <- data.frame(CellLineNames,
+#'                           DrugNames,
+#'                           Concentrations,
+#'                           Percent_Growth,
+#'                           Percent_Growth_SE)
+#'   Fake_Data <- rbind(Fake_Data, Fake_Data_to_add)
+#'   IDAPredict.ControlPlusOne(Monotherapy_Data = Fake_Data,
+#'                    Cell_Line_Name_Column = "CellLineNames",
+#'                    Drug_Name_Column = "DrugNames",
+#'                    Drug_Concentration_Column = "Concentrations",
+#'                    Efficacy_Column = "Percent_Growth",
+#'                    Control_Treatment_Drugs = c("D1", "D2"),
+#'                    Control_Treatment_Drug_Concentrations = c(1, 3),
+#'                    Drug_to_Add = "D3",
+#'                    Calculate_Uncertainty = TRUE,
+#'                    LowerEfficacyIsBetterDrugEffect = TRUE,
+#'                    Efficacy_SE_Column = "Percent_Growth_SE",
+#'                    CalculateIDAComboscoreAndHazardRatios = FALSE,
+#'                    EfficacyMetricName = "Percent_Growth",
+#'                    Average_Duplicate_Records = FALSE)
+#'
+#' #Now setting to average duplicate values.
+#'   Fake_Data <- rbind(Fake_Data, Fake_Data_to_add)
+#'   IDAPredict.ControlPlusOne(Monotherapy_Data = Fake_Data,
+#'                    Cell_Line_Name_Column = "CellLineNames",
+#'                    Drug_Name_Column = "DrugNames",
+#'                    Drug_Concentration_Column = "Concentrations",
+#'                    Efficacy_Column = "Percent_Growth",
+#'                    Control_Treatment_Drugs = c("D1", "D2"),
+#'                    Control_Treatment_Drug_Concentrations = c(1, 3),
+#'                    Drug_to_Add = "D3",
+#'                    Calculate_Uncertainty = TRUE,
+#'                    LowerEfficacyIsBetterDrugEffect = TRUE,
+#'                    Efficacy_SE_Column = "Percent_Growth_SE",
+#'                    CalculateIDAComboscoreAndHazardRatios = FALSE,
+#'                    EfficacyMetricName = "Percent_Growth",
+#'                    Average_Duplicate_Records = TRUE)
+#' @export
+IDAPredict.ControlPlusOne <- function(Monotherapy_Data, Cell_Line_Name_Column, Drug_Name_Column, Drug_Concentration_Column, Efficacy_Column, LowerEfficacyIsBetterDrugEffect, EfficacyMetricName = "Efficacy", Control_Treatment_Drugs, Control_Treatment_Drug_Concentrations, Drug_to_Add, Calculate_Uncertainty = FALSE, Efficacy_SE_Column = NULL, n_Simulations = 1000, CalculateIDAComboscoreAndHazardRatios = FALSE, Average_Duplicate_Records = FALSE){
+
+  #Checking that all input variables are in correct format
+    if(! is.data.frame(Monotherapy_Data)){
+      stop("Monotherapy_Data is not a data frame.")
+    }
+    if(! is.vector(Cell_Line_Name_Column) | ! is.character(Cell_Line_Name_Column) | ! length(Cell_Line_Name_Column) == 1){
+      stop("Cell_Line_Name_Column is not a character vector of length 1.")
+    }
+    if(! Cell_Line_Name_Column %in% colnames(Monotherapy_Data)){
+      stop("Cell_Line_Name_Column does not match any column names in Monotherapy_Data.")
+    }
+    if(! is.vector(Drug_Name_Column) | ! is.character(Drug_Name_Column) | ! length(Drug_Name_Column) == 1){
+      stop("Drug_Name_Column is not a character vector of length 1.")
+    }
+    if(! Drug_Name_Column %in% colnames(Monotherapy_Data)){
+      stop("Drug_Name_Column does not match any column names in Monotherapy_Data.")
+    }
+    if(! is.vector(Drug_Concentration_Column) | ! is.character(Drug_Concentration_Column) | ! length(Drug_Concentration_Column) == 1){
+      stop("Drug_Concentration_Column is not a character vector of length 1.")
+    }
+    if(! Drug_Concentration_Column %in% colnames(Monotherapy_Data)){
+      stop("Drug_Concentration_Column does not match any column names in Monotherapy_Data.")
+    }
+    if(! is.vector(Efficacy_Column) | ! is.character(Efficacy_Column) | ! length(Efficacy_Column) == 1){
+      stop("Efficacy_Column is not a character vector of length 1.")
+    }
+    if(! Efficacy_Column %in% colnames(Monotherapy_Data)){
+      stop("Efficacy_Column does not match any column names in Monotherapy_Data.")
+    }
+    if(! is.vector(LowerEfficacyIsBetterDrugEffect) | ! is.logical(LowerEfficacyIsBetterDrugEffect) | ! length(LowerEfficacyIsBetterDrugEffect) == 1){
+      stop("LowerEfficacyIsBetterDrugEffect is not a logical vector of length 1.")
+    }
+    if(! is.vector(EfficacyMetricName) | ! is.character(EfficacyMetricName) | ! length(EfficacyMetricName) == 1){
+      stop("EfficacyMetricName is not a character vector of length 1.")
+    }
+    if(! is.vector(Control_Treatment_Drugs) | ! is.character(Control_Treatment_Drugs) | ! length(Control_Treatment_Drugs) > 0){
+      stop("Control_Treatment_Drugs is not a character vector with length > 0.")
+    }
+    if(! all(Control_Treatment_Drugs %in% Monotherapy_Data[,Drug_Name_Column])){
+      missing.control.drugs <- Control_Treatment_Drugs[! Control_Treatment_Drugs %in% Monotherapy_Data[,Drug_Name_Column]]
+      stop(paste0("No data for the following Control_Treatment_Drugs found in Monotherapy_Data: ", paste(missing.control.drugs, collapse = ", ")))
+    }
+    if(! is.vector(Control_Treatment_Drug_Concentrations) | ! length(Control_Treatment_Drug_Concentrations) == length(Control_Treatment_Drugs)){
+      stop("Control_Treatment_Drug_Concentrations is not a vector with length = length(Control_Treatment_Drugs).")
+    }
+    if(! is.vector(Drug_to_Add) | ! is.character(Drug_to_Add) | ! length(Drug_to_Add) == 1){
+      stop("Drug_to_Add is not a character vector with length 1.")
+    }
+    if(! Drug_to_Add %in% Monotherapy_Data[,Drug_Name_Column]){
+      stop(paste0("No ", Drug_to_Add, " data found in Monotherapy_Data."))
+    }
+    if(! is.vector(Calculate_Uncertainty) | ! is.logical(Calculate_Uncertainty) | ! length(Calculate_Uncertainty) == 1){
+      stop("Calculate_Uncertainty is not a logical vector of length 1.")
+    }
+    if(Calculate_Uncertainty == TRUE){
+      if(is.null(Efficacy_SE_Column)){
+        stop("Calculate_Uncertainty is TRUE but Efficacy_SE_Column is not specified. Please either set Calculate_Uncertainty to FALSE or specify Efficacy_SE_Column.")
+      }
+      if(! is.vector(Efficacy_SE_Column) | ! is.character(Efficacy_SE_Column) | ! length(Efficacy_SE_Column) == 1){
+        stop("Calculate_Uncertainty is TRUE, but Efficacy_SE_Column is not a character vector of length 1.")
+      }
+      if(! Efficacy_SE_Column %in% colnames(Monotherapy_Data)){
+        stop("Calculate_Uncertainty is TRUE, but Efficacy_SE_Column does not match any column names in Monotherapy_Data.")
+      }
+      if(! is.vector(n_Simulations) | ! is.numeric(n_Simulations) | ! length(n_Simulations) == 1){
+        stop("Calculate_Uncertainty is TRUE, but n_Simulations is not a numeric vector of length 1.")
+      }
+      if(! n_Simulations%%1==0 | ! n_Simulations > 0){
+        stop("Calculate_Uncertainty is TRUE, but n_Simulations is not a positive, non-zero integer.")
+      }
+    }
+    if(! is.vector(CalculateIDAComboscoreAndHazardRatios) | ! is.logical(CalculateIDAComboscoreAndHazardRatios) | ! length(CalculateIDAComboscoreAndHazardRatios) == 1){
+      stop("CalculateIDAComboscoreAndHazardRatios is not a logical vector of length 1.")
+    }
+    if(! is.vector(Average_Duplicate_Records) | ! is.logical(Average_Duplicate_Records) | ! length(Average_Duplicate_Records) == 1){
+      stop("Average_Duplicate_Records is not a logical vector of length 1.")
+    }
+
+  #Creating single name for control treatment
+    Control_Treatment_Name <- paste(Control_Treatment_Drugs, collapse = "+")
+
+  #Organizing data into standard format based on column names provided for each desired set of information
+  #Also subsetting to only include data pertaining to Control_Treatment_Drugs and Drug_to_Add
+    if(Calculate_Uncertainty == TRUE){
+      Data <- Monotherapy_Data[Monotherapy_Data[,Drug_Name_Column] %in% c(Control_Treatment_Drugs, Drug_to_Add),c(Cell_Line_Name_Column, Drug_Name_Column, Drug_Concentration_Column, Efficacy_Column, Efficacy_SE_Column)]
+      colnames(Data) <- c("CellLine", "Drug", "Conc", "Efficacy", "Efficacy_SE")
+    } else {
+      Data <- Monotherapy_Data[Monotherapy_Data[,Drug_Name_Column] %in% c(Control_Treatment_Drugs, Drug_to_Add),c(Cell_Line_Name_Column, Drug_Name_Column, Drug_Concentration_Column, Efficacy_Column)]
+      colnames(Data) <- c("CellLine", "Drug", "Conc", "Efficacy")
+    }
+    rm(Monotherapy_Data)
+
+  #Making sure all columns are in correct formats
+    Data$CellLine <- as.character(Data$CellLine)
+    Data$Drug <- as.character(Data$Drug)
+    Data$Conc <- as.character(Data$Conc)
+    Data$Efficacy <- as.numeric(as.character(Data$Efficacy))
+    if(Calculate_Uncertainty == TRUE){
+      Data$Efficacy_SE <- as.numeric(as.character(Data$Efficacy_SE))
+    }
+
+  #Removing rows that are missing information
+  #Note: missing SE information is ignored if Calculate_Uncertainty == FALSE
+    Data <- Data[complete.cases(Data),]
+
+  #Subsetting into control group data with specified control concentrations
+    ControlData <- list(NULL)
+    for(i in 1:length(Control_Treatment_Drugs)){
+      ControlData[[i]] <- Data[Data$Drug %in% Control_Treatment_Drugs[i],]
+      #Checking that all provided concentrations are available for their respective drugs
+        if(! Control_Treatment_Drug_Concentrations[i] %in% ControlData[[i]]$Conc){
+          stop(paste0(Control_Treatment_Drug_Concentrations[i], " concentration is unavailable for ", Control_Treatment_Drugs[i], " in control treatment."))
+        } else {
+          ControlData[[i]] <- ControlData[[i]][ControlData[[i]]$Conc %in% Control_Treatment_Drug_Concentrations[i],]
+        }
+    }
+    names(ControlData) <- Control_Treatment_Drugs
+
+  #Collapsing control treatment into "single drug" treatment which represents activity of the control combination
+    #Finding cell line overlap between all drugs in control treatment
+      ControlCellLines <- list(NULL)
+      for(i in 1:length(ControlData)){
+        ControlCellLines[[i]] <- sort(unique(ControlData[[i]]$CellLine))
+      }
+      Usable_CellLines <- sort(unique(unlist(ControlCellLines)))
+      for(i in 1:length(ControlCellLines)){
+        Usable_CellLines <- Usable_CellLines[Usable_CellLines %in% ControlCellLines[[i]]]
+      }
+      rm(ControlCellLines)
+    #Checking again if at least 2 cell lines remain for all control drugs. If not, exiting with NA
+    #predictions and a warning.
+      if(! length(Usable_CellLines) >= 2){
+        #Returning NA predictions with warning due to too few cell lines.
+        warning(paste0("<2 overlapping cell lines available for combination of ", Control_Treatment_Name, " + ", Drug_to_Add, "."))
+        Return_Object <- list("Less than 2 overlapping cell lines available.", Control_Treatment_Name, Drug_to_Add, Usable_CellLines)
+        names(Return_Object) <- c("Efficacy_Predictions", "Control_Treatment", "Drug_to_Add", "Cell_Lines_Used")
+        return(Return_Object)
+      }
+    #Subsetting drug data to only include overlapping cell lines
+      for(i in 1:length(ControlData)){
+        ControlData[[i]] <- ControlData[[i]][ControlData[[i]]$CellLine %in% Usable_CellLines,]
+      }
+    #Checking that cell lines aren't duplicated in each drug dataset
+    #If Average_Duplicate_Records == FALSE, removing cell line duplicates with warning if duplicates are found.
+    #If Average_Duplicate_Records == TRUE, averaging duplicate records without warning.
+      for(i in 1:length(Control_Treatment_Drugs)){
+        CL_Conc <- paste(ControlData[[i]]$CellLine, ControlData[[i]]$Conc, sep = "_")
+        Dups <- CL_Conc[duplicated(CL_Conc)]
+        if(length(Dups) > 0 & Average_Duplicate_Records == FALSE){
+          warning(paste0("Duplicated information found for the following cell lines and ", Control_Treatment_Drugs[i], " concentrations in the control treatment. Average_Duplicate_Records = FALSE so duplicates removed: ", paste(Dups, collapse = ", ")))
+          ControlData[[i]] <- ControlData[[i]][! duplicated(CL_Conc),]
+        } else if(length(Dups) > 0 & Average_Duplicate_Records == TRUE){
+          if(Calculate_Uncertainty == FALSE){
+            #Simply averaging efficacy values
+              colnames <- colnames(ControlData[[i]])
+              ControlData[[i]] <- aggregate(ControlData[[i]]$Efficacy, by = list(ControlData[[i]]$CellLine, ControlData[[i]]$Drug, ControlData[[i]]$Conc), FUN = mean)
+              colnames(ControlData[[i]]) <- colnames
+          } else if(Calculate_Uncertainty == TRUE){
+            #Averaging efficacy
+              Efficacy_Average <- aggregate(ControlData[[i]]$Efficacy, by = list(ControlData[[i]]$CellLine, ControlData[[i]]$Drug, ControlData[[i]]$Conc), FUN = mean)
+              colnames(Efficacy_Average) <- c("CellLine", "Drug", "Conc", "Efficacy")
+            #Calculating uncertainty in averaged efficacy by adding efficacy uncertainties in quadrature and dividing by number of values used in average
+              Efficacy_Average_Uncertainties <- aggregate(ControlData[[i]]$Efficacy_SE, by = list(ControlData[[i]]$CellLine, ControlData[[i]]$Drug, ControlData[[i]]$Conc), FUN = function(x){sqrt(sum(x^2))/length(x)})
+              colnames(Efficacy_Average_Uncertainties) <- c("CellLine", "Drug", "Conc", "Efficacy_SE")
+            #Combining results
+              ControlData[[i]] <- merge(Efficacy_Average, Efficacy_Average_Uncertainties)
+          }
+        }
+      }
+    #Ordering cell lines the same for each drug
+      for(i in 1:length(ControlData)){
+        ControlData[[i]] <- ControlData[[i]][order(ControlData[[i]]$Conc, ControlData[[i]]$CellLine),]
+      }
+    #Performing control combination efficacy predictions for cases where lower efficacy values
+    #indicate a more effective drug effect (i.e. efficacy = percent viability, percent growth, etc.)
+      if(LowerEfficacyIsBetterDrugEffect == TRUE){
+        #Calculating expected combination efficacy for each cell line
+        #using Independent Drug Action for both Control and Test treatment
+          Control_Efficacy <- do.call(pmin, lapply(ControlData, function(x){return(x$Efficacy)}))
+        #If Calculate_Uncertainty == TRUE, doing Monte Carlo simulation to estimate
+        #uncertainties in output parameters based on uncertainties in monotherapy efficacies.
+          if(Calculate_Uncertainty == TRUE){
+            #Looping through each drug for each treatment and simulating efficacies based on
+            #measured efficacies and SE's
+              Control_MC_Efficacies <- as.list(NULL)
+              for(i in 1:length(ControlData)){
+                Control_MC_Efficacies[[i]] <- apply(ControlData[[i]][,c("Efficacy", "Efficacy_SE")], 1, function(x){rnorm(n = n_Simulations, mean = x[1], sd = x[2])})
+              }
+              names(Control_MC_Efficacies) <- names(ControlData)
+            #Calculating expected combination efficacies for each cell line
+            #using Independent Drug Action for both Control and Test treatment
+              Control_MC_Combo_Efficacies <- do.call(pmin, Control_MC_Efficacies)
+            #Calculating Uncertainty in individual cell line viabilities
+              Control_Efficacy_SEs <- apply(Control_MC_Combo_Efficacies, 2, sd)
+              rm(Control_MC_Combo_Efficacies, Control_MC_Efficacies)
+          }
+      }
+    #Performing combination efficacy predictions for cases where lower efficacy values
+    #indicate a less effective drug effect (i.e. efficacy = percent cell death, etc.)
+      if(LowerEfficacyIsBetterDrugEffect == FALSE){
+        #Calculating expected combination efficacy for each cell line
+        #using Independent Drug Action for both Control and Test treatment
+          Control_Efficacy <- do.call(pmax, lapply(ControlData, function(x){return(x$Efficacy)}))
+        #If Calculate_Uncertainty == TRUE, doing Monte Carlo simulation to estimate
+        #uncertainties in output parameters based on uncertainties in monotherapy efficacies.
+          if(Calculate_Uncertainty == TRUE){
+            #Looping through each drug for each treatment and simulating efficacies based on
+            #measured efficacies and SE's
+              Control_MC_Efficacies <- as.list(NULL)
+              for(i in 1:length(ControlData)){
+                Control_MC_Efficacies[[i]] <- apply(ControlData[[i]][,c("Efficacy", "Efficacy_SE")], 1, function(x){rnorm(n = n_Simulations, mean = x[1], sd = x[2])})
+              }
+              names(Control_MC_Efficacies) <- names(ControlData)
+            #Calculating expected combination efficacies for each cell line
+            #using Independent Drug Action for both Control and Test treatment
+              Control_MC_Combo_Efficacies <- do.call(pmax, Control_MC_Efficacies)
+            #Calculating Uncertainty in individual cell line viabilities
+              Control_Efficacy_SEs <- apply(Control_MC_Combo_Efficacies, 2, sd)
+              rm(Control_MC_Combo_Efficacies, Control_MC_Efficacies)
+          }
+      }
+
+  #Adding "single drug" representation of control treatment to Data
+    Data_to_Add <- Data[1:length(Usable_CellLines),]
+    Data_to_Add$CellLine <- ControlData[[1]]$CellLine
+    Data_to_Add$Drug <- Control_Treatment_Name
+    Data_to_Add$Conc <- paste(Control_Treatment_Drug_Concentrations, collapse = ",")
+    Data_to_Add$Efficacy <- Control_Efficacy
+    if(Calculate_Uncertainty == TRUE){
+      Data_to_Add$Efficacy_SE <- Control_Efficacy_SEs
+    }
+    Data <- rbind(Data, Data_to_Add)
+    rm(Data_to_Add, ControlData, Control_Efficacy)
+    if(Calculate_Uncertainty == TRUE){
+      rm(Control_Efficacy_SEs)
+    }
+
+  #Subsetting into Control_Treatment_Name and Drug_to_Add data
+    Control_Treatment_NameData <- Data[Data$Drug %in% Control_Treatment_Name,]
+    Drug_to_AddData <- Data[Data$Drug %in% Drug_to_Add,]
+    rm(Data)
+
+  #Finding cell line overlap between all drugs
+    Usable_CellLines <- sort(unique(Control_Treatment_NameData$CellLine[Control_Treatment_NameData$CellLine %in% Drug_to_AddData$CellLine]))
+
+  #Checking if at least 2 cell lines overlap for all drugs. If not, exiting with NA
+  #predictions and a warning.
+    if(! length(Usable_CellLines) >= 2){
+      #Returning NA predictions with warning due to too few cell lines.
+      warning(paste0("<2 overlapping cell lines available for combination of ", Control_Treatment_Name, " + ", Drug_to_Add, "."))
+      Return_Object <- list("Less than 2 overlapping cell lines available.", Control_Treatment_Name, Drug_to_Add, Usable_CellLines)
+      names(Return_Object) <- c("Efficacy_Predictions", "Control_Treatment", "Drug_to_Add", "Cell_Lines_Used")
+      return(Return_Object)
+    }
+
+  #Subsetting drug data to only include overlapping cell lines and ordering same
+  #for each drug.
+    Control_Treatment_NameData <- Control_Treatment_NameData[Control_Treatment_NameData$CellLine %in% Usable_CellLines,]
+    Control_Treatment_NameData <- Control_Treatment_NameData[order(Control_Treatment_NameData$Conc, Control_Treatment_NameData$CellLine),]
+    Drug_to_AddData <- Drug_to_AddData[Drug_to_AddData$CellLine %in% Usable_CellLines,]
+    Drug_to_AddData <- Drug_to_AddData[order(Drug_to_AddData$Conc, Drug_to_AddData$CellLine),]
+
+  #Checking that cell lines aren't duplicated in each drug dataset for a given drug dose.
+  #If Average_Duplicate_Records == FALSE, removing cell line duplicates with warning if duplicates are found.
+  #If Average_Duplicate_Records == TRUE, averaging duplicate records without warning.
+    D1_CL_Conc <- paste(Control_Treatment_NameData$CellLine, Control_Treatment_NameData$Conc, sep = "_")
+    D1Dups <- D1_CL_Conc[duplicated(D1_CL_Conc)]
+    if(length(D1Dups) > 0 & Average_Duplicate_Records == FALSE){
+      warning(paste0("Duplicated information found for the following cell lines and ", Control_Treatment_Name, " concentrations. Average_Duplicate_Records = FALSE so duplicates removed: ", paste(D1Dups, collapse = ", ")))
+      Control_Treatment_NameData <- Control_Treatment_NameData[! duplicated(D1_CL_Conc),]
+    } else if(length(D1Dups) > 0 & Average_Duplicate_Records == TRUE){
+      if(Calculate_Uncertainty == FALSE){
+        #Simply averaging efficacy values
+          d1.colnames <- colnames(Control_Treatment_NameData)
+          Control_Treatment_NameData <- aggregate(Control_Treatment_NameData$Efficacy, by = list(Control_Treatment_NameData$CellLine, Control_Treatment_NameData$Drug, Control_Treatment_NameData$Conc), FUN = mean)
+          colnames(Control_Treatment_NameData) <- d1.colnames
+      } else if(Calculate_Uncertainty == TRUE){
+        #Averaging efficacy
+          d1.Efficacy_Average <- aggregate(Control_Treatment_NameData$Efficacy, by = list(Control_Treatment_NameData$CellLine, Control_Treatment_NameData$Drug, Control_Treatment_NameData$Conc), FUN = mean)
+          colnames(d1.Efficacy_Average) <- c("CellLine", "Drug", "Conc", "Efficacy")
+        #Calculating uncertainty in averaged efficacy by adding efficacy uncertainties in quadrature and dividing by number of values used in average
+          d1.Efficacy_Average_Uncertainties <- aggregate(Control_Treatment_NameData$Efficacy_SE, by = list(Control_Treatment_NameData$CellLine, Control_Treatment_NameData$Drug, Control_Treatment_NameData$Conc), FUN = function(x){sqrt(sum(x^2))/length(x)})
+          colnames(d1.Efficacy_Average_Uncertainties) <- c("CellLine", "Drug", "Conc", "Efficacy_SE")
+        #Combining results
+          Control_Treatment_NameData <- merge(d1.Efficacy_Average, d1.Efficacy_Average_Uncertainties)
+      }
+    }
+    D2_CL_Conc <- paste(Drug_to_AddData$CellLine, Drug_to_AddData$Conc, sep = "_")
+    D2Dups <- D2_CL_Conc[duplicated(D2_CL_Conc)]
+    if(length(D2Dups) > 0 & Average_Duplicate_Records == FALSE){
+      warning(paste0("Duplicated information found for the following cell lines and ", Drug_to_Add, " concentrations. Average_Duplicate_Records = FALSE so duplicates removed: ", paste(D2Dups, collapse = ", ")))
+      Drug_to_AddData <- Drug_to_AddData[! duplicated(D2_CL_Conc),]
+    } else if(length(D2Dups) > 0 & Average_Duplicate_Records == TRUE){
+      if(Calculate_Uncertainty == FALSE){
+        #Simply averaging efficacy values
+          d2.colnames <- colnames(Drug_to_AddData)
+          Drug_to_AddData <- aggregate(Drug_to_AddData$Efficacy, by = list(Drug_to_AddData$CellLine, Drug_to_AddData$Drug, Drug_to_AddData$Conc), FUN = mean)
+          colnames(Drug_to_AddData) <- d2.colnames
+      } else if(Calculate_Uncertainty == TRUE){
+        #Averaging efficacy
+          d2.Efficacy_Average <- aggregate(Drug_to_AddData$Efficacy, by = list(Drug_to_AddData$CellLine, Drug_to_AddData$Drug, Drug_to_AddData$Conc), FUN = mean)
+          colnames(d2.Efficacy_Average) <- c("CellLine", "Drug", "Conc", "Efficacy")
+        #Calculating uncertainty in averaged efficacy by adding efficacy uncertainties in quadrature and dividing by number of values used in average
+          d2.Efficacy_Average_Uncertainties <- aggregate(Drug_to_AddData$Efficacy_SE, by = list(Drug_to_AddData$CellLine, Drug_to_AddData$Drug, Drug_to_AddData$Conc), FUN = function(x){sqrt(sum(x^2))/length(x)})
+          colnames(d2.Efficacy_Average_Uncertainties) <- c("CellLine", "Drug", "Conc", "Efficacy_SE")
+        #Combining results
+          Drug_to_AddData <- merge(d2.Efficacy_Average, d2.Efficacy_Average_Uncertainties)
+      }
+    }
+
+  #Checking that all drug concentrations for each drug are available for each cell line
+  #Omitting cell lines that are missing concentrations for 1 or more drugs
+    AllData <- list(Control_Treatment_NameData, Drug_to_AddData)
+    CLs_per_dose <- sapply(AllData, function(x){as.data.frame.table(table(x$Conc), stringsAsFactors = FALSE)[,2]})
+    if(! all(unlist(unique(c(CLs_per_dose))) == length(Usable_CellLines))){
+      #Not all cell lines have all doses for all drugs. Printing warning and removing cell lines with incomplete information.
+        for(i in 1:length(AllData)){
+          n_doses <- length(unique(AllData[[i]]$Conc))
+          CL_dose_count <- as.data.frame.table(table(AllData[[i]]$CellLine), stringsAsFactors = FALSE)
+          if(i == 1){
+            CLs_missing_doses <- CL_dose_count$Var1[CL_dose_count$Freq < n_doses]
+          } else {
+            CLs_missing_doses <- unique(c(CLs_missing_doses, CL_dose_count$Var1[CL_dose_count$Freq < n_doses]))
+          }
+        }
+        warning(paste0("The following cell lines are missing efficacy information for one or more drug concentrations in the combination of ", Control_Treatment_Name, " + ", Drug_to_Add, ". These cell lines have been omitted from the analysis: ", paste(CLs_missing_doses, collapse = ", ")))
+      #Re-subsetting drug data to only include overlapping cell lines and ordering same
+      #for each drug with cell lines that had missing information removed.
+        Usable_CellLines <- Usable_CellLines[! Usable_CellLines %in% CLs_missing_doses]
+        Control_Treatment_NameData <- Control_Treatment_NameData[Control_Treatment_NameData$CellLine %in% Usable_CellLines,]
+        Control_Treatment_NameData <- Control_Treatment_NameData[order(Control_Treatment_NameData$Conc, Control_Treatment_NameData$CellLine),]
+        Drug_to_AddData <- Drug_to_AddData[Drug_to_AddData$CellLine %in% Usable_CellLines,]
+        Drug_to_AddData <- Drug_to_AddData[order(Drug_to_AddData$Conc, Drug_to_AddData$CellLine),]
+        rm(AllData, CLs_per_dose, n_doses, CLs_missing_doses, CL_dose_count)
+    } else {
+      rm(AllData, CLs_per_dose)
+    }
+
+  #Checking again if at least 2 cell lines remain for all drugs. If not, exiting with NA
+  #predictions and a warning.
+    if(! length(Usable_CellLines) >= 2){
+      #Returning NA predictions with warning due to too few cell lines.
+      warning(paste0("<2 overlapping cell lines available for combination of ", Control_Treatment_Name, " + ", Drug_to_Add, "."))
+      Return_Object <- list("Less than 2 overlapping cell lines available.", Control_Treatment_Name, Drug_to_Add, Usable_CellLines)
+      names(Return_Object) <- c("Efficacy_Predictions", "Control_Treatment", "Drug_to_Add", "Cell_Lines_Used")
+      return(Return_Object)
+    }
+
+  #Dividing data by drug concentration
+    Control_Treatment_NameData <- split(Control_Treatment_NameData, as.factor(Control_Treatment_NameData$Conc))
+    Drug_to_AddData <- split(Drug_to_AddData, as.factor(Drug_to_AddData$Conc))
+
+  #Identifying all concentration comparisons that need to be made.
+    D1_concentrations <- names(Control_Treatment_NameData)
+    D2_concentrations <- names(Drug_to_AddData)
+    Dose_Comparisons <- expand.grid(D1_concentrations, D2_concentrations, stringsAsFactors = FALSE)
+    colnames(Dose_Comparisons) <- c("Control_Treatment_Doses", "Drug_to_Add_Dose")
+
+  #Adding extra columns to Dose_Comparisons to store predicted efficacy results
+    Dose_Comparisons$Mean_Control_Treatment_Efficacy <- NA
+    Dose_Comparisons$Mean_Control_Treatment_Efficacy_SE <- NA
+    Dose_Comparisons$Mean_Drug_to_Add_Efficacy <- NA
+    Dose_Comparisons$Mean_Drug_to_Add_Efficacy_SE <- NA
+    Dose_Comparisons$Mean_Combo_Efficacy <- NA
+    Dose_Comparisons$Mean_Combo_Efficacy_SE <- NA
+    if(CalculateIDAComboscoreAndHazardRatios == TRUE){
+      Dose_Comparisons$HR_vs_Control_Treatment <- NA
+      Dose_Comparisons$HR_vs_Control_Treatment_SE <- NA
+      Dose_Comparisons$HR_vs_Drug_to_Add <- NA
+      Dose_Comparisons$HR_vs_Drug_to_Add_SE <- NA
+      Dose_Comparisons$IDA_Comboscore <- NA
+      Dose_Comparisons$IDA_Comboscore_SE <- NA
+    }
+
+  #Performing combination efficacy predictions for cases where lower efficacy values
+  #indicate a more effective drug effect (i.e. efficacy = percent viability, percent growth, etc.)
+    if(LowerEfficacyIsBetterDrugEffect == TRUE){
+      #Looping through all dose comparisons and predicting combination efficacies
+        for(i in 1:nrow(Dose_Comparisons)){
+          #Identifying correct dose data for each drug for this comparison.
+            D1_Data <- Control_Treatment_NameData[[which(names(Control_Treatment_NameData) == Dose_Comparisons$Control_Treatment_Doses[i])]]
+            D2_Data <- Drug_to_AddData[[which(names(Drug_to_AddData) == Dose_Comparisons$Drug_to_Add_Dose[i])]]
+          #Calculating expected combination efficacy for each cell line
+          #using Independent Drug Action
+            Combo_Efficacy <- pmin(D1_Data$Efficacy, D2_Data$Efficacy)
+          #Calculating average efficacy accross all cell lines
+            Dose_Comparisons$Mean_Control_Treatment_Efficacy[i] <- mean(D1_Data$Efficacy)
+            Dose_Comparisons$Mean_Drug_to_Add_Efficacy[i] <- mean(D2_Data$Efficacy)
+            Dose_Comparisons$Mean_Combo_Efficacy[i] <- mean(Combo_Efficacy)
+            if(CalculateIDAComboscoreAndHazardRatios == TRUE){
+              Dose_Comparisons$HR_vs_Control_Treatment[i] <- Dose_Comparisons$Mean_Combo_Efficacy[i] / Dose_Comparisons$Mean_Control_Treatment_Efficacy[i]
+              Dose_Comparisons$HR_vs_Drug_to_Add[i] <- Dose_Comparisons$Mean_Combo_Efficacy[i] / Dose_Comparisons$Mean_Drug_to_Add_Efficacy[i]
+              delta_viability <- min(Dose_Comparisons$Mean_Control_Treatment_Efficacy[i], Dose_Comparisons$Mean_Drug_to_Add_Efficacy[i]) - Dose_Comparisons$Mean_Combo_Efficacy[i]
+              HR_C_over_Mbest <- max(Dose_Comparisons$HR_vs_Control_Treatment[i], Dose_Comparisons$HR_vs_Drug_to_Add[i])
+              Dose_Comparisons$IDA_Comboscore[i] <- delta_viability - delta_viability * HR_C_over_Mbest
+            }
+          }
+        rm(D1_Data, D2_Data, Combo_Efficacy)
+        if(CalculateIDAComboscoreAndHazardRatios == TRUE){
+          rm(delta_viability, HR_C_over_Mbest)
+        }
+
+      #If Calculate_Uncertainty == TRUE, doing Monte Carlo simulation to estimate
+      #uncertainties in output parameters based on uncertainties in monotherapy efficacies.
+        if(Calculate_Uncertainty == TRUE){
+          #Looping through each dose for each drug and simulating efficacies based on
+          #measured efficacies and SE's
+            D1_MC_Efficacies <- as.list(NULL)
+            for(i in 1:length(Control_Treatment_NameData)){
+              D1_MC_Efficacies[[i]] <- apply(Control_Treatment_NameData[[i]][,c("Efficacy", "Efficacy_SE")], 1, function(x){rnorm(n = n_Simulations, mean = x[1], sd = x[2])})
+            }
+            names(D1_MC_Efficacies) <- names(Control_Treatment_NameData)
+            D2_MC_Efficacies <- as.list(NULL)
+            for(i in 1:length(Drug_to_AddData)){
+              D2_MC_Efficacies[[i]] <- apply(Drug_to_AddData[[i]][,c("Efficacy", "Efficacy_SE")], 1, function(x){rnorm(n = n_Simulations, mean = x[1], sd = x[2])})
+            }
+            names(D2_MC_Efficacies) <- names(Drug_to_AddData)
+          #Looping through all dose comparisons and calculating uncertainties in output values
+            for(i in 1:nrow(Dose_Comparisons)){
+              #Identifying correct dose data for each drug for this comparison.
+                D1_Data <- D1_MC_Efficacies[[which(names(D1_MC_Efficacies) == Dose_Comparisons$Control_Treatment_Doses[i])]]
+                D2_Data <- D2_MC_Efficacies[[which(names(D2_MC_Efficacies) == Dose_Comparisons$Drug_to_Add_Dose[i])]]
+              #Calculating expected combination efficacy for each cell line
+              #using Independent Drug Action
+                Combo_Efficacy <- pmin(D1_Data, D2_Data)
+              #Calculating average efficacy accross all cell lines
+                D1_efficacies <- rowMeans(D1_Data)
+                D2_efficacies <- rowMeans(D2_Data)
+                Combo_efficacies <- rowMeans(Combo_Efficacy)
+                if(CalculateIDAComboscoreAndHazardRatios == TRUE){
+                  HRs_vs_D1 <- Combo_efficacies / D1_efficacies
+                  HRs_vs_D2 <- Combo_efficacies / D2_efficacies
+                }
+                Dose_Comparisons$Mean_Control_Treatment_Efficacy_SE[i] <- sd(D1_efficacies)
+                Dose_Comparisons$Mean_Drug_to_Add_Efficacy_SE[i] <- sd(D2_efficacies)
+                Dose_Comparisons$Mean_Combo_Efficacy_SE[i] <- sd(Combo_efficacies)
+                if(CalculateIDAComboscoreAndHazardRatios == TRUE){
+                  Dose_Comparisons$HR_vs_Control_Treatment_SE[i] <- sd(HRs_vs_D1)
+                  Dose_Comparisons$HR_vs_Drug_to_Add_SE[i] <- sd(HRs_vs_D2)
+                  delta_viabilities <- pmin(D1_efficacies, D2_efficacies) - Combo_efficacies
+                  HR_C_over_Mbests <- pmax(HRs_vs_D1, HRs_vs_D2)
+                  Dose_Comparisons$IDA_Comboscore_SE[i] <- sd(delta_viabilities - delta_viabilities * HR_C_over_Mbests)
+                }
+            }
+            rm(D1_efficacies, D2_efficacies, Combo_efficacies)
+            if(CalculateIDAComboscoreAndHazardRatios == TRUE){
+              rm(HRs_vs_D1, HRs_vs_D2, delta_viabilities, HR_C_over_Mbests)
+            }
+        }
+    }
+
+  #Performing combination efficacy predictions for cases where lower efficacy values
+  #indicate a less effective drug effect (i.e. efficacy = percent cell death, etc.)
+    if(LowerEfficacyIsBetterDrugEffect == FALSE){
+      #Looping through all dose comparisons and predicting combination efficacies
+        for(i in 1:nrow(Dose_Comparisons)){
+          #Identifying correct dose data for each drug for this comparison.
+            D1_Data <- Control_Treatment_NameData[[which(names(Control_Treatment_NameData) == Dose_Comparisons$Control_Treatment_Doses[i])]]
+            D2_Data <- Drug_to_AddData[[which(names(Drug_to_AddData) == Dose_Comparisons$Drug_to_Add_Dose[i])]]
+          #Calculating expected combination efficacy for each cell line
+          #using Independent Drug Action
+            Combo_Efficacy <- pmax(D1_Data$Efficacy, D2_Data$Efficacy)
+          #Calculating average efficacy accross all cell lines
+            Dose_Comparisons$Mean_Control_Treatment_Efficacy[i] <- mean(D1_Data$Efficacy)
+            Dose_Comparisons$Mean_Drug_to_Add_Efficacy[i] <- mean(D2_Data$Efficacy)
+            Dose_Comparisons$Mean_Combo_Efficacy[i] <- mean(Combo_Efficacy)
+            if(CalculateIDAComboscoreAndHazardRatios == TRUE){
+              Dose_Comparisons$HR_vs_Control_Treatment[i] <- (1 - Dose_Comparisons$Mean_Combo_Efficacy[i]) / (1 - Dose_Comparisons$Mean_Control_Treatment_Efficacy[i])
+              Dose_Comparisons$HR_vs_Drug_to_Add[i] <- (1 - Dose_Comparisons$Mean_Combo_Efficacy[i]) / (1 - Dose_Comparisons$Mean_Drug_to_Add_Efficacy[i])
+              delta_hazard <- min((1 - Dose_Comparisons$Mean_Control_Treatment_Efficacy[i]), (1 - Dose_Comparisons$Mean_Drug_to_Add_Efficacy[i])) - (1 - Dose_Comparisons$Mean_Combo_Efficacy[i])
+              HR_C_over_Mbest <- max(Dose_Comparisons$HR_vs_Control_Treatment[i], Dose_Comparisons$HR_vs_Drug_to_Add[i])
+              Dose_Comparisons$IDA_Comboscore[i] <- delta_hazard - delta_hazard * HR_C_over_Mbest
+            }
+          }
+        rm(D1_Data, D2_Data, Combo_Efficacy)
+        if(CalculateIDAComboscoreAndHazardRatios == TRUE){
+          rm(delta_hazard, HR_C_over_Mbest)
+        }
+
+      #If Calculate_Uncertainty == TRUE, doing Monte Carlo simulation to estimate
+      #uncertainties in output parameters based on uncertainties in monotherapy efficacies.
+        if(Calculate_Uncertainty == TRUE){
+          #Looping through each dose for each drug and simulating efficacies based on
+          #measured efficacies and SE's
+            D1_MC_Efficacies <- as.list(NULL)
+            for(i in 1:length(Control_Treatment_NameData)){
+              D1_MC_Efficacies[[i]] <- apply(Control_Treatment_NameData[[i]][,c("Efficacy", "Efficacy_SE")], 1, function(x){rnorm(n = n_Simulations, mean = x[1], sd = x[2])})
+            }
+            names(D1_MC_Efficacies) <- names(Control_Treatment_NameData)
+            D2_MC_Efficacies <- as.list(NULL)
+            for(i in 1:length(Drug_to_AddData)){
+              D2_MC_Efficacies[[i]] <- apply(Drug_to_AddData[[i]][,c("Efficacy", "Efficacy_SE")], 1, function(x){rnorm(n = n_Simulations, mean = x[1], sd = x[2])})
+            }
+            names(D2_MC_Efficacies) <- names(Drug_to_AddData)
+          #Looping through all dose comparisons and calculating uncertainties in output values
+            for(i in 1:nrow(Dose_Comparisons)){
+              #Identifying correct dose data for each drug for this comparison.
+                D1_Data <- D1_MC_Efficacies[[which(names(D1_MC_Efficacies) == Dose_Comparisons$Control_Treatment_Doses[i])]]
+                D2_Data <- D2_MC_Efficacies[[which(names(D2_MC_Efficacies) == Dose_Comparisons$Drug_to_Add_Dose[i])]]
+              #Calculating expected combination efficacy for each cell line
+              #using Independent Drug Action
+                Combo_Efficacy <- pmax(D1_Data, D2_Data)
+              #Calculating average efficacy accross all cell lines
+                D1_efficacies <- rowMeans(D1_Data)
+                D2_efficacies <- rowMeans(D2_Data)
+                Combo_efficacies <- rowMeans(Combo_Efficacy)
+                if(CalculateIDAComboscoreAndHazardRatios == TRUE){
+                  HRs_vs_D1 <- (1-Combo_efficacies) / (1-D1_efficacies)
+                  HRs_vs_D2 <- (1-Combo_efficacies) / (1-D2_efficacies)
+                }
+                Dose_Comparisons$Mean_Control_Treatment_Efficacy_SE[i] <- sd(D1_efficacies)
+                Dose_Comparisons$Mean_Drug_to_Add_Efficacy_SE[i] <- sd(D2_efficacies)
+                Dose_Comparisons$Mean_Combo_Efficacy_SE[i] <- sd(Combo_efficacies)
+                if(CalculateIDAComboscoreAndHazardRatios == TRUE){
+                  Dose_Comparisons$HR_vs_Control_Treatment_SE[i] <- sd(HRs_vs_D1)
+                  Dose_Comparisons$HR_vs_Drug_to_Add_SE[i] <- sd(HRs_vs_D2)
+                  delta_hazards <- pmin((1-D1_efficacies), (1-D2_efficacies)) - (1-Combo_efficacies)
+                  HR_C_over_Mbests <- pmax(HRs_vs_D1, HRs_vs_D2)
+                  Dose_Comparisons$IDA_Comboscore_SE[i] <- sd(delta_hazards - delta_hazards * HR_C_over_Mbests)
+                }
+            }
+            rm(D1_efficacies, D2_efficacies, Combo_efficacies)
+            if(CalculateIDAComboscoreAndHazardRatios == TRUE){
+              rm(HRs_vs_D1, HRs_vs_D2, delta_hazards, HR_C_over_Mbests)
+            }
+        }
+    }
+
+  #Returning Outputs
+    #If Calculate_Uncertainty == FALSE, removing SE columns
+      if(Calculate_Uncertainty == FALSE){
+        Dose_Comparisons <- Dose_Comparisons[,-which(colnames(Dose_Comparisons) %in% c("Mean_Control_Treatment_Efficacy_SE", "Mean_Drug_to_Add_Efficacy_SE", "Mean_Combo_Efficacy_SE", "HR_vs_Control_Treatment_SE", "HR_vs_Drug_to_Add_SE", "IDA_Comboscore_SE"))]
+      }
+    #Replacing "Efficacy" with EfficacyMetricName in column names of Dose_Comparisons
+      colnames(Dose_Comparisons) <- gsub("Efficacy", EfficacyMetricName, colnames(Dose_Comparisons))
+    #Constructing Return_Object
+      Return_Object <- list(Dose_Comparisons, Control_Treatment_Name, Drug_to_Add, Usable_CellLines)
+      names(Return_Object) <- c("Efficacy_Predictions", "Control_Treatment", "Drug_to_Add", "Cell_Lines_Used")
+    #Returning output
+      return(Return_Object)
+}
