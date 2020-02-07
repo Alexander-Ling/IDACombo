@@ -2,6 +2,7 @@
 
 export(BlissPredict.TestvsControl)
 export(IDAPredict.2drug)
+export(IDAPredict.ControlPlusOne)
 export(IDAPredict.TestvsControl)
 importFrom(stats,aggregate)
 importFrom(stats,complete.cases)

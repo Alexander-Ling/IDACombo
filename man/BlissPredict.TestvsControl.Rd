@@ -4,14 +4,25 @@
 \alias{BlissPredict.TestvsControl}
 \title{Predicts and compares Bliss Independence efficacies for a pair of control and test treatments}
 \usage{
-BlissPredict.TestvsControl(Monotherapy_Data, Cell_Line_Name_Column,
-  Drug_Name_Column, Drug_Concentration_Column, Efficacy_Column,
-  LowerEfficacyIsBetterDrugEffect, EfficacyMetricName = "Efficacy",
-  Control_Treatment_Drugs, Control_Treatment_Drug_Concentrations,
-  Test_Treatment_Drugs, Test_Treatment_Drug_Concentrations,
-  Calculate_Uncertainty = FALSE, Efficacy_SE_Column = NULL,
-  n_Simulations = 1000, CalculateHazardRatio = FALSE,
-  Average_Duplicate_Records = FALSE, Return_Monte_Carlo_HRs = FALSE)
+BlissPredict.TestvsControl(
+  Monotherapy_Data,
+  Cell_Line_Name_Column,
+  Drug_Name_Column,
+  Drug_Concentration_Column,
+  Efficacy_Column,
+  LowerEfficacyIsBetterDrugEffect,
+  EfficacyMetricName = "Efficacy",
+  Control_Treatment_Drugs,
+  Control_Treatment_Drug_Concentrations,
+  Test_Treatment_Drugs,
+  Test_Treatment_Drug_Concentrations,
+  Calculate_Uncertainty = FALSE,
+  Efficacy_SE_Column = NULL,
+  n_Simulations = 1000,
+  CalculateHazardRatio = FALSE,
+  Average_Duplicate_Records = FALSE,
+  Return_Monte_Carlo_HRs = FALSE
+)
 }
 \arguments{
 \item{Monotherapy_Data}{A data frame where each row contains information about the response of a single cell line to a single drug at a single concentration. Must minimally include columns containing the following information: cell line name, drug name, drug concentration, and measured drug efficacy. May optionally include a column recording the standard error (SE) of the measured drug efficacy.}
