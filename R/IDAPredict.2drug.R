@@ -335,8 +335,8 @@ IDAPredict.2drug <- function(Monotherapy_Data, Cell_Line_Name_Column, Drug_Name_
   #Checking that all drug concentrations for each drug are available for each cell line
   #Omitting cell lines that are missing concentrations for 1 or more drugs
     AllData <- list(Drug1Data, Drug2Data)
-    CLs_per_dose <- sapply(AllData, function(x){as.data.frame.table(table(x$Conc), stringsAsFactors = FALSE)[,2]})
-    if(! all(unique(c(CLs_per_dose)) == length(Usable_CellLines))){
+    CLs_per_dose <- lapply(AllData, function(x){as.data.frame.table(table(x$Conc), stringsAsFactors = FALSE)[,2]})
+    if(! all(CLs_per_dose[[1]] == length(Usable_CellLines)) | ! all(CLs_per_dose[[2]] == length(Usable_CellLines))){
       #Not all cell lines have all doses for all drugs. Printing warning and removing cell lines with incomplete information.
         for(i in 1:length(AllData)){
           n_doses <- length(unique(AllData[[i]]$Conc))

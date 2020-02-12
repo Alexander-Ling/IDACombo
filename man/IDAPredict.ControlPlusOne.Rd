@@ -57,7 +57,7 @@ IDAPredict.ControlPlusOne(
 Returns a list with 4 elements: 1) A data frame with the produced efficacy predictions. 2) A character string indicating the control treatment drugs (separated by +). 3) A character string indicating the name of drug to be added to the control treatment to make a new combination. 4) A character vector containing the names of the cell lines used to make the efficacy predictions.
 }
 \description{
-This function creates efficacy predictions for combinations of a control therapy + 1 additional drug using monotherapy efficacy data and the assumptions of independent drug action. When data is available for multiple concentrations of each single drug to add, efficacy predictions are made for all possible concentration combinations.
+This function creates efficacy predictions for combinations of a control therapy + 1 additional drug using monotherapy efficacy data and the assumptions of independent drug action. When data is available for multiple concentrations of the drug to add, efficacy predictions are made for all possible concentration combinations.
 }
 \examples{
 #Loading Package

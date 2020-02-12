@@ -252,7 +252,7 @@ IDAPredict.ControlPlusOne <- function(Monotherapy_Data, Cell_Line_Name_Column, D
     }
 
   #Creating single name for control treatment
-    Control_Treatment_Name <- paste(Control_Treatment_Drugs, collapse = "+")
+    Control_Treatment_Name <- paste0("combo:", paste(Control_Treatment_Drugs, collapse = "+"))
 
   #Organizing data into standard format based on column names provided for each desired set of information
   #Also subsetting to only include data pertaining to Control_Treatment_Drugs and Drug_to_Add
