@@ -479,7 +479,7 @@ IDAPredict.TestvsControl <- function(Monotherapy_Data, Cell_Line_Name_Column, Dr
       #using Independent Drug Action for both Control and Test treatment
         Control_Efficacy <- do.call(pmin, lapply(ControlData, function(x){return(x$Efficacy)}))
         Test_Efficacy <- do.call(pmin, lapply(TestData, function(x){return(x$Efficacy)}))
-      #Calculating average efficacy accross all cell lines
+      #Calculating average efficacy across all cell lines
         Prediction_Results$Mean_Control_Treatment_Efficacy <- mean(Control_Efficacy)
         Prediction_Results$Mean_Test_Treatment_Efficacy <- mean(Test_Efficacy)
         if(CalculateHazardRatio == TRUE){
@@ -495,18 +495,42 @@ IDAPredict.TestvsControl <- function(Monotherapy_Data, Cell_Line_Name_Column, Dr
             Control_MC_Efficacies <- as.list(NULL)
             for(i in 1:length(ControlData)){
               Control_MC_Efficacies[[i]] <- apply(ControlData[[i]][,c("Efficacy", "Efficacy_SE")], 1, function(x){rnorm(n = n_Simulations, mean = x[1], sd = x[2])})
+              colnames(Control_MC_Efficacies[[i]]) <- ControlData[[i]]$CellLine
             }
             names(Control_MC_Efficacies) <- names(ControlData)
             Test_MC_Efficacies <- as.list(NULL)
             for(i in 1:length(TestData)){
-              Test_MC_Efficacies[[i]] <- apply(TestData[[i]][,c("Efficacy", "Efficacy_SE")], 1, function(x){rnorm(n = n_Simulations, mean = x[1], sd = x[2])})
+              #Checking if this test drug is also in the control therapy.
+              #If so, not randomly sampling for test viabilities. Instead, calculating how many SE's from
+              #the measured value each simulated control viability fell, and matching that distance in
+              #the simulated test viabilities. This is done because the drug in the control and test
+              #therapies are not independent in this case--they will have come from the same dose-response curve.
+                if(names(TestData)[i] %in% names(ControlData)){
+                  #Calculating the number of SEs away from the measured value each simulated value is in the control therapy for this drug
+                    Measured_Control_Data <- ControlData[[names(TestData)[i]]][,c("CellLine", "Efficacy", "Efficacy_SE")]
+                    Measured_Control_Data <- Measured_Control_Data[match(colnames(Control_MC_Efficacies[[names(TestData)[i]]]), Measured_Control_Data$CellLine),]
+                    Measured_Control_Efficacies <- matrix(Measured_Control_Data$Efficacy, ncol = length(Measured_Control_Data$Efficacy), nrow = n_Simulations, byrow = TRUE)
+                    Measured_Control_Efficacy_SEs <- matrix(Measured_Control_Data$Efficacy_SE, ncol = length(Measured_Control_Data$Efficacy_SE), nrow = n_Simulations, byrow = TRUE)
+                    SEs_deviated <- (Control_MC_Efficacies[[names(TestData)[i]]] - Measured_Control_Efficacies) / Measured_Control_Efficacy_SEs
+                  #Calculating simulated test viabilities based on the SE deviations from the simulated control viabilities for this drug
+                    Measured_Test_Data <- TestData[[names(TestData)[i]]][,c("CellLine", "Efficacy", "Efficacy_SE")]
+                    Measured_Test_Data <- Measured_Test_Data[match(colnames(SEs_deviated), Measured_Test_Data$CellLine),]
+                    Measured_Test_Efficacies <- matrix(Measured_Test_Data$Efficacy, ncol = length(Measured_Test_Data$Efficacy), nrow = n_Simulations, byrow = TRUE, dimnames = list(NULL, Measured_Test_Data$CellLine))
+                    Measured_Test_Efficacy_SEs <- matrix(Measured_Test_Data$Efficacy_SE, ncol = length(Measured_Test_Data$Efficacy_SE), nrow = n_Simulations, byrow = TRUE, dimnames = list(NULL, Measured_Test_Data$CellLine))
+                    Test_MC_Efficacies[[i]] <- Measured_Test_Efficacies + (SEs_deviated * Measured_Test_Efficacy_SEs)
+                }
+              #If test drug is not in control therapy, randomly sampling
+                Test_MC_Efficacies[[i]] <- apply(TestData[[i]][,c("Efficacy", "Efficacy_SE")], 1, function(x){rnorm(n = n_Simulations, mean = x[1], sd = x[2])})
             }
             names(Test_MC_Efficacies) <- names(TestData)
+            if(exists("Measured_Control_Data")){
+              rm(Measured_Control_Data, Measured_Control_Efficacies, Measured_Control_Efficacy_SEs, Measured_Test_Data, Measured_Test_Efficacies, Measured_Test_Efficacy_SEs)
+            }
           #Calculating expected combination efficacies for each cell line
           #using Independent Drug Action for both Control and Test treatment
             Control_MC_Combo_Efficacies <- do.call(pmin, Control_MC_Efficacies)
             Test_MC_Combo_Efficacies <- do.call(pmin, Test_MC_Efficacies)
-          #Calculating average efficacy accross all cell lines
+          #Calculating average efficacy across all cell lines
             Mean_Control_Efficacies_MC <- rowMeans(Control_MC_Combo_Efficacies)
             Mean_Test_Efficacies_MC <- rowMeans(Test_MC_Combo_Efficacies)
             Prediction_Results$Mean_Control_Treatment_Efficacy_SE <- sd(Mean_Control_Efficacies_MC)
@@ -526,7 +550,7 @@ IDAPredict.TestvsControl <- function(Monotherapy_Data, Cell_Line_Name_Column, Dr
       #using Independent Drug Action for both Control and Test treatment
         Control_Efficacy <- do.call(pmax, lapply(ControlData, function(x){return(x$Efficacy)}))
         Test_Efficacy <- do.call(pmax, lapply(TestData, function(x){return(x$Efficacy)}))
-      #Calculating average efficacy accross all cell lines
+      #Calculating average efficacy across all cell lines
         Prediction_Results$Mean_Control_Treatment_Efficacy <- mean(Control_Efficacy)
         Prediction_Results$Mean_Test_Treatment_Efficacy <- mean(Test_Efficacy)
         if(CalculateHazardRatio == TRUE){
@@ -542,13 +566,37 @@ IDAPredict.TestvsControl <- function(Monotherapy_Data, Cell_Line_Name_Column, Dr
             Control_MC_Efficacies <- as.list(NULL)
             for(i in 1:length(ControlData)){
               Control_MC_Efficacies[[i]] <- apply(ControlData[[i]][,c("Efficacy", "Efficacy_SE")], 1, function(x){rnorm(n = n_Simulations, mean = x[1], sd = x[2])})
+              colnames(Control_MC_Efficacies[[i]]) <- ControlData[[i]]$CellLine
             }
             names(Control_MC_Efficacies) <- names(ControlData)
             Test_MC_Efficacies <- as.list(NULL)
             for(i in 1:length(TestData)){
-              Test_MC_Efficacies[[i]] <- apply(TestData[[i]][,c("Efficacy", "Efficacy_SE")], 1, function(x){rnorm(n = n_Simulations, mean = x[1], sd = x[2])})
+              #Checking if this test drug is also in the control therapy.
+              #If so, not randomly sampling for test viabilities. Instead, calculating how many SE's from
+              #the measured value each simulated control viability fell, and matching that distance in
+              #the simulated test viabilities. This is done because the drug in the control and test
+              #therapies are not independent in this case--they will have come from the same dose-response curve.
+                if(names(TestData)[i] %in% names(ControlData)){
+                  #Calculating the number of SEs away from the measured value each simulated value is in the control therapy for this drug
+                    Measured_Control_Data <- ControlData[[names(TestData)[i]]][,c("CellLine", "Efficacy", "Efficacy_SE")]
+                    Measured_Control_Data <- Measured_Control_Data[match(colnames(Control_MC_Efficacies[[names(TestData)[i]]]), Measured_Control_Data$CellLine),]
+                    Measured_Control_Efficacies <- matrix(Measured_Control_Data$Efficacy, ncol = length(Measured_Control_Data$Efficacy), nrow = n_Simulations, byrow = TRUE)
+                    Measured_Control_Efficacy_SEs <- matrix(Measured_Control_Data$Efficacy_SE, ncol = length(Measured_Control_Data$Efficacy_SE), nrow = n_Simulations, byrow = TRUE)
+                    SEs_deviated <- (Control_MC_Efficacies[[names(TestData)[i]]] - Measured_Control_Efficacies) / Measured_Control_Efficacy_SEs
+                  #Calculating simulated test viabilities based on the SE deviations from the simulated control viabilities for this drug
+                    Measured_Test_Data <- TestData[[names(TestData)[i]]][,c("CellLine", "Efficacy", "Efficacy_SE")]
+                    Measured_Test_Data <- Measured_Test_Data[match(colnames(SEs_deviated), Measured_Test_Data$CellLine),]
+                    Measured_Test_Efficacies <- matrix(Measured_Test_Data$Efficacy, ncol = length(Measured_Test_Data$Efficacy), nrow = n_Simulations, byrow = TRUE, dimnames = list(NULL, Measured_Test_Data$CellLine))
+                    Measured_Test_Efficacy_SEs <- matrix(Measured_Test_Data$Efficacy_SE, ncol = length(Measured_Test_Data$Efficacy_SE), nrow = n_Simulations, byrow = TRUE, dimnames = list(NULL, Measured_Test_Data$CellLine))
+                    Test_MC_Efficacies[[i]] <- Measured_Test_Efficacies + (SEs_deviated * Measured_Test_Efficacy_SEs)
+                }
+              #If test drug is not in control therapy, randomly sampling
+                Test_MC_Efficacies[[i]] <- apply(TestData[[i]][,c("Efficacy", "Efficacy_SE")], 1, function(x){rnorm(n = n_Simulations, mean = x[1], sd = x[2])})
             }
             names(Test_MC_Efficacies) <- names(TestData)
+            if(exists("Measured_Control_Data")){
+              rm(Measured_Control_Data, Measured_Control_Efficacies, Measured_Control_Efficacy_SEs, Measured_Test_Data, Measured_Test_Efficacies, Measured_Test_Efficacy_SEs)
+            }
           #Calculating expected combination efficacies for each cell line
           #using Independent Drug Action for both Control and Test treatment
             Control_MC_Combo_Efficacies <- do.call(pmax, Control_MC_Efficacies)
