@@ -10,17 +10,31 @@
 #' @param Drug_Concentration_Column A character vector of length 1 containing the name of the column in the Monotherapy_Data data frame which contains drug concentrations.
 #' @param Efficacy_Column A character vector of length 1 containing the name of the column in the Monotherapy_Data data frame which contains measured drug efficacies (i.e. percent Viability, percent Cell Growth, etc.).
 #' @param LowerEfficacyIsBetterDrugEffect A logic vector of length 1 indicating whether or not lower values in Efficacy_Column indicate a more effective drug effect (i.e. for percent viability). Set TRUE if so. Otherwise, set FALSE if higher values in Efficacy_Column indicate a more effective drug response (i.e. for percent cell death).
-#' @param EfficacyMetricName A character vector of length 1 indicating the name of the efficacy metric being used (i.e. Percent_Viability, Percent_Growth, etc.). Used to correctly label column names in output. Defaults to "Efficacy".
+#' @param Efficacy_Metric_Name A character vector of length 1 indicating the name of the efficacy metric being used (i.e. Percent_Viability, Percent_Growth, etc.). Used to correctly label column names in output. Defaults to "Efficacy".
 #' @param Control_Treatment_Drugs A character vector of length > 0 containing the names of the drugs in the control drug treatment for which efficacy predictions are to be made.
 #' @param Control_Treatment_Drug_Concentrations A vector of drug concentrations for Control_Treatment_Drugs with the first concentration in Control_Treatment_Drug_Concentrations corresponding to the first drug in Control_Treatment_Drugs etc. Only one concentration may be specified for each drug in the control treatment, but, if a drug is included in both the control and test treatments, there is no need for the same concentration of that drug to be used in both treatments.
 #' @param Drug_to_Add A character vector of length 1 containing the name of the drug to add to the control treatment to create a new drug combination for which efficacy predictions are to be made.
 #' @param Calculate_Uncertainty A logic vector of length one indicating whether or not a Monte Carlo simulation should be performed to estimate uncertainties in the efficacy predictions based on uncertainties in the monotherapy efficacy measurements. Set TRUE if you wish to calculate uncertainties. Defaults to FALSE.
 #' @param Efficacy_SE_Column A character vector of length 1 containing the name of the column in the Monotherapy_Data data frame which contains the standard errors of measured drug efficacies. Must be specified if Calculate_Uncertainty is set to TRUE.
-#' @param n_Simulations A positive, non-zero integer vector of length 1 indicating the number of Monte Carlo iterations to be run when calculating output efficacy prediction uncertainties. Must be specified if Calculate_Uncertainty is set to TRUE. Defaults to 1000.
-#' @param CalculateIDAComboscoreAndHazardRatios A logic vector of length 1 indicating whether or not IDA-Comboscores and Hazard Ratios (HRs) should be calculated between monotherapies and the drug combination. Set TRUE if so. Should only be set to TRUE for efficacy metrics that range between 0 and 1 (i.e. percent viability). Defaults to FALSE.
+#' @param n_Simulations A positive, integer vector of length 1 with a value >= 40 indicating the number of random samples to be drawn when calculating output efficacy prediction uncertainties. Defaults to 1000.
+#' @param Calculate_IDAcomboscore_And_Hazard_Ratio A logic vector of length 1 indicating whether or not IDA-Comboscores and Hazard Ratios (HRs) should be calculated between monotherapies and the drug combination. Set TRUE if so. Should only be set to TRUE for efficacy metrics that range between 0 and 1 (i.e. percent viability). Defaults to FALSE.
 #' @param Average_Duplicate_Records A logic vector of length 1 indicating whether or not duplicated records (where a cell line has multiple records for being tested with a given drug at a given concentration) should be averaged. If TRUE, Efficacy values are averaged, and, if Calculate_Uncertainty is also TRUE, Efficacy_SE values are added in quadrature and divided by the number of duplicate records for that cell line/drug/concentration set.
+#' @param Return_Bootstrap_Values A logic vector of length 1 indicating whether or not the function should return the Drug1 Efficacies and Drug2 Efficacies simulated in the semi-parametric bootstrap used to estimate the uncertainties of those values. If equal to TRUE, Calculate_Uncertainty must also equal TRUE.
 #'
-#' @return Returns a list with 4 elements: 1) A data frame with the produced efficacy predictions. 2) A character string indicating the control treatment drugs (separated by +). 3) A character string indicating the name of drug to be added to the control treatment to make a new combination. 4) A character vector containing the names of the cell lines used to make the efficacy predictions.
+#'@details
+#'Uncertainty estimates for values calculated by this function are generated using a semi-parametric bootstrap approach. This is performed in several steps.\enumerate{
+#'\item Control treatment efficacies for each drug/concentration are simulated by random sampling from normal distributions with means equal to the provided calculated efficacies and standard deviations equal to the provided efficacy standard errors.
+#'\item Drug_to_Add efficacies are simulated in the same fashion as for control treatment efficacies, except in cases when Drug_to_Add is in Control_Treatment_Drugs. In such cases, it is assumed that the efficacy values for Drug_to_Add and its match in Control_Treatment_Drugs are derived from the same dose-response curve, so each simulated efficacy for Drug_to_Add is matched to the corresponding simulated efficacy for that drug in Control_Treatment_Drugs using a standard normal deviate.
+#'\item Efficacy predictions are made for the combination of Control_Treatment_Drugs + Drug_to_Add for each cell line and set of simulated efficacies using the assumptions of independent drug action.
+#'\item Cell lines are randomly sampled with replacement for each simulation as many times as there are original cell lines. The simulated Control_Treatment_Drugs monotherapy efficacies and combination efficacies are then sampled according to the sampled cell lines for each simulation.
+#'\item Mean efficacies are calculated for the control and new combination treatments for each simulation. If specified to do so, these values are then used to calculate simulated HRs and IDAcomboscores.
+#'\item The simulated distributions of each efficacy metric are used to estimate uncertainties for those metrics.
+#'}
+#'
+#'@return \itemize{
+#'\item If Return_Bootstrap_Values = FALSE, this function returns a list with 4 elements: 1) Either a data frame with the calculated efficacy predictions, or, if an error occurred, a character vector of length one with the error message. 2) A character value with the name of the control therapy 3) A character value with the name of Drug_to_Add 4) A character vector containing the names of the cell lines used to make the efficacy predictions.
+#'\item If Return_Bootstrap_Values = TRUE & Calculate_Uncertainty = TRUE, this function returns a list with 6 elements: the first 4 elements are the same as when Return_Bootstrap_Values = FALSE and the fifth and sixth elements are numeric vectors of, respectively, the control therapy and Drug_to_Add viabilities simulated during the semi-parametric bootstrap used to estimate uncertainties.
+#'}
 #'
 #' @examples
 #' #Loading Package
@@ -50,8 +64,8 @@
 #'                    Drug_to_Add = "D3",
 #'                    Calculate_Uncertainty = FALSE,
 #'                    LowerEfficacyIsBetterDrugEffect = TRUE,
-#'                    EfficacyMetricName = "Viability",
-#'                    CalculateIDAComboscoreAndHazardRatios = TRUE,
+#'                    Efficacy_Metric_Name = "Viability",
+#'                    Calculate_IDAcomboscore_And_Hazard_Ratio = TRUE,
 #'                    Average_Duplicate_Records = FALSE)
 #'
 #' #Creating efficacy predictions for D1+D2 + D3 with uncertainty calculations
@@ -66,8 +80,8 @@
 #'                    Calculate_Uncertainty = TRUE,
 #'                    Efficacy_SE_Column = "Viability_SE",
 #'                    LowerEfficacyIsBetterDrugEffect = TRUE,
-#'                    EfficacyMetricName = "Viability",
-#'                    CalculateIDAComboscoreAndHazardRatios = TRUE,
+#'                    Efficacy_Metric_Name = "Viability",
+#'                    Calculate_IDAcomboscore_And_Hazard_Ratio = TRUE,
 #'                    Average_Duplicate_Records = FALSE)
 #'
 #' #Converting Viabilty to reduction in viability and redoing calculations
@@ -90,13 +104,13 @@
 #'                    Calculate_Uncertainty = TRUE,
 #'                    LowerEfficacyIsBetterDrugEffect = FALSE,
 #'                    Efficacy_SE_Column = "Reduction_in_Viability_SE",
-#'                    EfficacyMetricName = "Reduction_In_Viability",
-#'                    CalculateIDAComboscoreAndHazardRatios = TRUE,
+#'                    Efficacy_Metric_Name = "Reduction_In_Viability",
+#'                    Calculate_IDAcomboscore_And_Hazard_Ratio = TRUE,
 #'                    Average_Duplicate_Records = FALSE)
 #'
 #' #Changing efficacy metric to percent growth (range -1 to 1)
 #' #Note that calculating Hazard Ratios and IDA-Comboscores is no longer valid, so
-#' #CalculateIDAComboscoreAndHazardRatios is set to FALSE.
+#' #Calculate_IDAcomboscore_And_Hazard_Ratio is set to FALSE.
 #'   Percent_Growth <- c(sample(seq(0.4,1,length.out = 10), 6, replace = TRUE),
 #'                       sample(seq(-0.4,0.2,length.out = 10), 6, replace = TRUE),
 #'                       sample(seq(-0.2,0.3,length.out = 10), 6, replace = TRUE),
@@ -120,8 +134,8 @@
 #'                    Calculate_Uncertainty = TRUE,
 #'                    LowerEfficacyIsBetterDrugEffect = TRUE,
 #'                    Efficacy_SE_Column = "Percent_Growth_SE",
-#'                    CalculateIDAComboscoreAndHazardRatios = FALSE,
-#'                    EfficacyMetricName = "Percent_Growth",
+#'                    Calculate_IDAcomboscore_And_Hazard_Ratio = FALSE,
+#'                    Efficacy_Metric_Name = "Percent_Growth",
 #'                    Average_Duplicate_Records = FALSE)
 #'
 #' #Adding duplicate records for each cell line, and showing behavior with
@@ -151,8 +165,8 @@
 #'                    Calculate_Uncertainty = TRUE,
 #'                    LowerEfficacyIsBetterDrugEffect = TRUE,
 #'                    Efficacy_SE_Column = "Percent_Growth_SE",
-#'                    CalculateIDAComboscoreAndHazardRatios = FALSE,
-#'                    EfficacyMetricName = "Percent_Growth",
+#'                    Calculate_IDAcomboscore_And_Hazard_Ratio = FALSE,
+#'                    Efficacy_Metric_Name = "Percent_Growth",
 #'                    Average_Duplicate_Records = FALSE)
 #'
 #' #Now setting to average duplicate values.
@@ -168,11 +182,11 @@
 #'                    Calculate_Uncertainty = TRUE,
 #'                    LowerEfficacyIsBetterDrugEffect = TRUE,
 #'                    Efficacy_SE_Column = "Percent_Growth_SE",
-#'                    CalculateIDAComboscoreAndHazardRatios = FALSE,
-#'                    EfficacyMetricName = "Percent_Growth",
+#'                    Calculate_IDAcomboscore_And_Hazard_Ratio = FALSE,
+#'                    Efficacy_Metric_Name = "Percent_Growth",
 #'                    Average_Duplicate_Records = TRUE)
 #' @export
-IDAPredict.ControlPlusOne <- function(Monotherapy_Data, Cell_Line_Name_Column, Drug_Name_Column, Drug_Concentration_Column, Efficacy_Column, LowerEfficacyIsBetterDrugEffect, EfficacyMetricName = "Efficacy", Control_Treatment_Drugs, Control_Treatment_Drug_Concentrations, Drug_to_Add, Calculate_Uncertainty = FALSE, Efficacy_SE_Column = NULL, n_Simulations = 1000, CalculateIDAComboscoreAndHazardRatios = FALSE, Average_Duplicate_Records = FALSE){
+IDAPredict.ControlPlusOne <- function(Monotherapy_Data, Cell_Line_Name_Column, Drug_Name_Column, Drug_Concentration_Column, Efficacy_Column, LowerEfficacyIsBetterDrugEffect, Efficacy_Metric_Name = "Efficacy", Control_Treatment_Drugs, Control_Treatment_Drug_Concentrations, Drug_to_Add, Calculate_Uncertainty = FALSE, Efficacy_SE_Column = NULL, n_Simulations = 1000, Calculate_IDAcomboscore_And_Hazard_Ratio = FALSE, Average_Duplicate_Records = FALSE, Return_Bootstrap_Values = FALSE){
 
   #Checking that all input variables are in correct format
     if(! is.data.frame(Monotherapy_Data)){
@@ -205,8 +219,8 @@ IDAPredict.ControlPlusOne <- function(Monotherapy_Data, Cell_Line_Name_Column, D
     if(! is.vector(LowerEfficacyIsBetterDrugEffect) | ! is.logical(LowerEfficacyIsBetterDrugEffect) | ! length(LowerEfficacyIsBetterDrugEffect) == 1){
       stop("LowerEfficacyIsBetterDrugEffect is not a logical vector of length 1.")
     }
-    if(! is.vector(EfficacyMetricName) | ! is.character(EfficacyMetricName) | ! length(EfficacyMetricName) == 1){
-      stop("EfficacyMetricName is not a character vector of length 1.")
+    if(! is.vector(Efficacy_Metric_Name) | ! is.character(Efficacy_Metric_Name) | ! length(Efficacy_Metric_Name) == 1){
+      stop("Efficacy_Metric_Name is not a character vector of length 1.")
     }
     if(! is.vector(Control_Treatment_Drugs) | ! is.character(Control_Treatment_Drugs) | ! length(Control_Treatment_Drugs) > 0){
       stop("Control_Treatment_Drugs is not a character vector with length > 0.")
@@ -244,12 +258,19 @@ IDAPredict.ControlPlusOne <- function(Monotherapy_Data, Cell_Line_Name_Column, D
         stop("Calculate_Uncertainty is TRUE, but n_Simulations is not a positive, non-zero integer.")
       }
     }
-    if(! is.vector(CalculateIDAComboscoreAndHazardRatios) | ! is.logical(CalculateIDAComboscoreAndHazardRatios) | ! length(CalculateIDAComboscoreAndHazardRatios) == 1){
-      stop("CalculateIDAComboscoreAndHazardRatios is not a logical vector of length 1.")
+    if(! is.vector(Return_Bootstrap_Values) | ! is.logical(Return_Bootstrap_Values) | ! length(Return_Bootstrap_Values) == 1){
+      stop("Return_Bootstrap_Values is not a logical vector of length 1.")
+    }
+    if(Return_Bootstrap_Values == TRUE & ! Calculate_Uncertainty == TRUE){
+      stop("Return_Bootstrap_Values is TRUE, but Calculate_Uncertainty is not TRUE.")
+    }
+    if(! is.vector(Calculate_IDAcomboscore_And_Hazard_Ratio) | ! is.logical(Calculate_IDAcomboscore_And_Hazard_Ratio) | ! length(Calculate_IDAcomboscore_And_Hazard_Ratio) == 1){
+      stop("Calculate_IDAcomboscore_And_Hazard_Ratio is not a logical vector of length 1.")
     }
     if(! is.vector(Average_Duplicate_Records) | ! is.logical(Average_Duplicate_Records) | ! length(Average_Duplicate_Records) == 1){
       stop("Average_Duplicate_Records is not a logical vector of length 1.")
     }
+
 
   #Creating single name for control treatment
     Control_Treatment_Name <- paste0("combo:", paste(Control_Treatment_Drugs, collapse = "+"))
@@ -302,15 +323,22 @@ IDAPredict.ControlPlusOne <- function(Monotherapy_Data, Cell_Line_Name_Column, D
         Usable_CellLines <- Usable_CellLines[Usable_CellLines %in% ControlCellLines[[i]]]
       }
       rm(ControlCellLines)
-    #Checking again if at least 2 cell lines remain for all control drugs. If not, exiting with NA
+    #Checking if at least 2 cell lines remain for all control drugs. If not, exiting with no
     #predictions and a warning.
       if(! length(Usable_CellLines) >= 2){
         #Returning NA predictions with warning due to too few cell lines.
         warning(paste0("<2 overlapping cell lines available for combination of ", gsub("^combo:", "", Control_Treatment_Name), " + ", Drug_to_Add, "."))
-        Return_Object <- list("Less than 2 overlapping cell lines available.", gsub("^combo:", "", Control_Treatment_Name), Drug_to_Add, Usable_CellLines)
-        names(Return_Object) <- c("Efficacy_Predictions", "Control_Treatment", "Drug_to_Add", "Cell_Lines_Used")
-        return(Return_Object)
+        if(Return_Bootstrap_Values == FALSE){
+          Return_Object <- list("Less than 2 overlapping cell lines available.", gsub("^combo:", "", Control_Treatment_Name), Drug_to_Add, Usable_CellLines)
+          names(Return_Object) <- c("Efficacy_Predictions", "Control_Treatment", "Drug_to_Add", "Cell_Lines_Used")
+          return(Return_Object)
+        } else if(Return_Bootstrap_Values == TRUE){
+          Return_Object <- list("Less than 2 overlapping cell lines available.", gsub("^combo:", "", Control_Treatment_Name), Drug_to_Add, Usable_CellLines, NULL, NULL)
+          names(Return_Object) <- c("Efficacy_Predictions", "Control_Treatment", "Drug_to_Add", "Cell_Lines_Used", "Bootstrap_Control_Efficacies", "Boostrap_Drug_to_Add_Efficacies")
+          return(Return_Object)
+        }
       }
+
     #Subsetting drug data to only include overlapping cell lines
       for(i in 1:length(ControlData)){
         ControlData[[i]] <- ControlData[[i]][ControlData[[i]]$CellLine %in% Usable_CellLines,]
@@ -418,14 +446,20 @@ IDAPredict.ControlPlusOne <- function(Monotherapy_Data, Cell_Line_Name_Column, D
   #Finding cell line overlap between all drugs
     Usable_CellLines <- sort(unique(Control_Treatment_NameData$CellLine[Control_Treatment_NameData$CellLine %in% Drug_to_AddData$CellLine]))
 
-  #Checking if at least 2 cell lines overlap for all drugs. If not, exiting with NA
+  #Checking again if at least 2 cell lines remain for all control drugs. If not, exiting with no
   #predictions and a warning.
     if(! length(Usable_CellLines) >= 2){
       #Returning NA predictions with warning due to too few cell lines.
       warning(paste0("<2 overlapping cell lines available for combination of ", gsub("^combo:", "", Control_Treatment_Name), " + ", Drug_to_Add, "."))
-      Return_Object <- list("Less than 2 overlapping cell lines available.", gsub("^combo:", "", Control_Treatment_Name), Drug_to_Add, Usable_CellLines)
-      names(Return_Object) <- c("Efficacy_Predictions", "Control_Treatment", "Drug_to_Add", "Cell_Lines_Used")
-      return(Return_Object)
+      if(Return_Bootstrap_Values == FALSE){
+        Return_Object <- list("Less than 2 overlapping cell lines available.", gsub("^combo:", "", Control_Treatment_Name), Drug_to_Add, Usable_CellLines)
+        names(Return_Object) <- c("Efficacy_Predictions", "Control_Treatment", "Drug_to_Add", "Cell_Lines_Used")
+        return(Return_Object)
+      } else if(Return_Bootstrap_Values == TRUE){
+        Return_Object <- list("Less than 2 overlapping cell lines available.", gsub("^combo:", "", Control_Treatment_Name), Drug_to_Add, Usable_CellLines, NULL, NULL)
+        names(Return_Object) <- c("Efficacy_Predictions", "Control_Treatment", "Drug_to_Add", "Cell_Lines_Used", "Bootstrap_Control_Efficacies", "Boostrap_Drug_to_Add_Efficacies")
+        return(Return_Object)
+      }
     }
 
   #Subsetting drug data to only include overlapping cell lines and ordering same
@@ -511,14 +545,20 @@ IDAPredict.ControlPlusOne <- function(Monotherapy_Data, Cell_Line_Name_Column, D
       rm(AllData, CLs_per_dose)
     }
 
-  #Checking again if at least 2 cell lines remain for all drugs. If not, exiting with NA
+  #Checking again if at least 2 cell lines remain for all control drugs. If not, exiting with no
   #predictions and a warning.
     if(! length(Usable_CellLines) >= 2){
       #Returning NA predictions with warning due to too few cell lines.
       warning(paste0("<2 overlapping cell lines available for combination of ", gsub("^combo:", "", Control_Treatment_Name), " + ", Drug_to_Add, "."))
-      Return_Object <- list("Less than 2 overlapping cell lines available.", gsub("^combo:", "", Control_Treatment_Name), Drug_to_Add, Usable_CellLines)
-      names(Return_Object) <- c("Efficacy_Predictions", "Control_Treatment", "Drug_to_Add", "Cell_Lines_Used")
-      return(Return_Object)
+      if(Return_Bootstrap_Values == FALSE){
+        Return_Object <- list("Less than 2 overlapping cell lines available.", gsub("^combo:", "", Control_Treatment_Name), Drug_to_Add, Usable_CellLines)
+        names(Return_Object) <- c("Efficacy_Predictions", "Control_Treatment", "Drug_to_Add", "Cell_Lines_Used")
+        return(Return_Object)
+      } else if(Return_Bootstrap_Values == TRUE){
+        Return_Object <- list("Less than 2 overlapping cell lines available.", gsub("^combo:", "", Control_Treatment_Name), Drug_to_Add, Usable_CellLines, NULL, NULL)
+        names(Return_Object) <- c("Efficacy_Predictions", "Control_Treatment", "Drug_to_Add", "Cell_Lines_Used", "Bootstrap_Control_Efficacies", "Boostrap_Drug_to_Add_Efficacies")
+        return(Return_Object)
+      }
     }
 
   #Dividing data by drug concentration
@@ -534,18 +574,25 @@ IDAPredict.ControlPlusOne <- function(Monotherapy_Data, Cell_Line_Name_Column, D
   #Adding extra columns to Dose_Comparisons to store predicted efficacy results
     Dose_Comparisons$Mean_Control_Treatment_Efficacy <- NA
     Dose_Comparisons$Mean_Control_Treatment_Efficacy_SE <- NA
+    Dose_Comparisons$`Mean_Control_Treatment_Efficacy_95%_Confidence_Interval` <- NA
     Dose_Comparisons$Mean_Drug_to_Add_Efficacy <- NA
     Dose_Comparisons$Mean_Drug_to_Add_Efficacy_SE <- NA
+    Dose_Comparisons$`Mean_Drug_to_Add_Efficacy_95%_Confidence_Interval` <- NA
     Dose_Comparisons$Mean_Combo_Efficacy <- NA
     Dose_Comparisons$Mean_Combo_Efficacy_SE <- NA
-    if(CalculateIDAComboscoreAndHazardRatios == TRUE){
-      Dose_Comparisons$HR_vs_Control_Treatment <- NA
-      Dose_Comparisons$HR_vs_Control_Treatment_SE <- NA
-      Dose_Comparisons$HR_vs_Drug_to_Add <- NA
-      Dose_Comparisons$HR_vs_Drug_to_Add_SE <- NA
-      Dose_Comparisons$IDA_Comboscore <- NA
-      Dose_Comparisons$IDA_Comboscore_SE <- NA
-    }
+    Dose_Comparisons$`Mean_Combo_Efficacy_95%_Confidence_Interval` <- NA
+    Dose_Comparisons$HR_vs_Control_Treatment <- NA
+    Dose_Comparisons$HR_vs_Control_Treatment_SE <- NA
+    Dose_Comparisons$`HR_vs_Control_Treatment_95%_Confidence_Interval` <- NA
+    Dose_Comparisons$`p_HR_vs_Control_Treatment>=1` <- NA
+    Dose_Comparisons$HR_vs_Drug_to_Add <- NA
+    Dose_Comparisons$HR_vs_Drug_to_Add_SE <- NA
+    Dose_Comparisons$`HR_vs_Drug_to_Add_95%_Confidence_Interval` <- NA
+    Dose_Comparisons$`p_HR_vs_Drug_to_Add>=1` <- NA
+    Dose_Comparisons$IDA_Comboscore <- NA
+    Dose_Comparisons$IDA_Comboscore_SE <- NA
+    Dose_Comparisons$`IDA_Comboscore_95%_Confidence_Interval` <- NA
+    Dose_Comparisons$`p_IDA_Comboscore<=0` <- NA
 
   #Performing combination efficacy predictions for cases where lower efficacy values
   #indicate a more effective drug effect (i.e. efficacy = percent viability, percent growth, etc.)
@@ -562,7 +609,7 @@ IDAPredict.ControlPlusOne <- function(Monotherapy_Data, Cell_Line_Name_Column, D
             Dose_Comparisons$Mean_Control_Treatment_Efficacy[i] <- mean(D1_Data$Efficacy)
             Dose_Comparisons$Mean_Drug_to_Add_Efficacy[i] <- mean(D2_Data$Efficacy)
             Dose_Comparisons$Mean_Combo_Efficacy[i] <- mean(Combo_Efficacy)
-            if(CalculateIDAComboscoreAndHazardRatios == TRUE){
+            if(Calculate_IDAcomboscore_And_Hazard_Ratio == TRUE){
               Dose_Comparisons$HR_vs_Control_Treatment[i] <- Dose_Comparisons$Mean_Combo_Efficacy[i] / Dose_Comparisons$Mean_Control_Treatment_Efficacy[i]
               Dose_Comparisons$HR_vs_Drug_to_Add[i] <- Dose_Comparisons$Mean_Combo_Efficacy[i] / Dose_Comparisons$Mean_Drug_to_Add_Efficacy[i]
               delta_viability <- min(Dose_Comparisons$Mean_Control_Treatment_Efficacy[i], Dose_Comparisons$Mean_Drug_to_Add_Efficacy[i]) - Dose_Comparisons$Mean_Combo_Efficacy[i]
@@ -571,7 +618,7 @@ IDAPredict.ControlPlusOne <- function(Monotherapy_Data, Cell_Line_Name_Column, D
             }
           }
         rm(D1_Data, D2_Data, Combo_Efficacy)
-        if(CalculateIDAComboscoreAndHazardRatios == TRUE){
+        if(Calculate_IDAcomboscore_And_Hazard_Ratio == TRUE){
           rm(delta_viability, HR_C_over_Mbest)
         }
 
@@ -614,6 +661,14 @@ IDAPredict.ControlPlusOne <- function(Monotherapy_Data, Cell_Line_Name_Column, D
             if(exists("Measured_D1_Data")){
               rm(Measured_D1_Data, Measured_D1_Efficacies, Measured_D1_Efficacy_SEs, Measured_D2_Data, Measured_D2_Efficacies, Measured_D2_Efficacy_SEs)
             }
+          #Resampling cell lines for each simulation with replacement to account for the effect of random variation in cell line selection
+            Selected_CCLs_Per_Sim <- t(apply(D1_MC_Efficacies[[1]], 1, function(x){return(sample(1:length(x), replace = TRUE))}))
+            for(i in 1:length(D1_MC_Efficacies)){
+              D1_MC_Efficacies[[i]] <- t(mapply(function(x,y){return(x[y])}, x = split(D1_MC_Efficacies[[i]], row(D1_MC_Efficacies[[i]])), y = split(Selected_CCLs_Per_Sim, row(Selected_CCLs_Per_Sim))))
+            }
+            for(i in 1:length(D2_MC_Efficacies)){
+              D2_MC_Efficacies[[i]] <- t(mapply(function(x,y){return(x[y])}, x = split(D2_MC_Efficacies[[i]], row(D2_MC_Efficacies[[i]])), y = split(Selected_CCLs_Per_Sim, row(Selected_CCLs_Per_Sim))))
+            }
           #Looping through all dose comparisons and calculating uncertainties in output values
             for(i in 1:nrow(Dose_Comparisons)){
               #Identifying correct dose data for each drug for this comparison.
@@ -622,28 +677,60 @@ IDAPredict.ControlPlusOne <- function(Monotherapy_Data, Cell_Line_Name_Column, D
               #Calculating expected combination efficacy for each cell line
               #using Independent Drug Action
                 Combo_Efficacy <- pmin(D1_Data, D2_Data)
-              #Calculating average efficacy accross all cell lines
+              #Calculating average efficacy across sampled cell lines
                 D1_efficacies <- rowMeans(D1_Data)
                 D2_efficacies <- rowMeans(D2_Data)
                 Combo_efficacies <- rowMeans(Combo_Efficacy)
-                if(CalculateIDAComboscoreAndHazardRatios == TRUE){
-                  HRs_vs_D1 <- Combo_efficacies / D1_efficacies
-                  HRs_vs_D2 <- Combo_efficacies / D2_efficacies
-                }
+              #Calculating standard errors
                 Dose_Comparisons$Mean_Control_Treatment_Efficacy_SE[i] <- sd(D1_efficacies)
                 Dose_Comparisons$Mean_Drug_to_Add_Efficacy_SE[i] <- sd(D2_efficacies)
                 Dose_Comparisons$Mean_Combo_Efficacy_SE[i] <- sd(Combo_efficacies)
-                if(CalculateIDAComboscoreAndHazardRatios == TRUE){
-                  Dose_Comparisons$HR_vs_Control_Treatment_SE[i] <- sd(HRs_vs_D1)
-                  Dose_Comparisons$HR_vs_Drug_to_Add_SE[i] <- sd(HRs_vs_D2)
-                  delta_viabilities <- pmin(D1_efficacies, D2_efficacies) - Combo_efficacies
-                  HR_C_over_Mbests <- pmax(HRs_vs_D1, HRs_vs_D2)
-                  Dose_Comparisons$IDA_Comboscore_SE[i] <- sd(delta_viabilities - delta_viabilities * HR_C_over_Mbests)
+              #Calculating 95% confidence intervals for mean treatment efficacies
+                index_2.5 <- floor(0.025*n_Simulations)
+                index_97.5 <- ceiling(0.975*n_Simulations)
+                Dose_Comparisons$`Mean_Control_Treatment_Efficacy_95%_Confidence_Interval`[i] <- paste(sort(D1_efficacies, decreasing = FALSE)[c(index_2.5, index_97.5)], collapse = "_")
+                Dose_Comparisons$`Mean_Drug_to_Add_Efficacy_95%_Confidence_Interval`[i] <- paste(sort(D2_efficacies, decreasing = FALSE)[c(index_2.5, index_97.5)], collapse = "_")
+                Dose_Comparisons$`Mean_Combo_Efficacy_95%_Confidence_Interval`[i] <- paste(sort(Combo_efficacies, decreasing = FALSE)[c(index_2.5, index_97.5)], collapse = "_")
+              #Calculating simulated IDAcomboscores and HRs
+                if(Calculate_IDAcomboscore_And_Hazard_Ratio == TRUE){
+                  #HRs
+                    HRs_vs_D1 <- Combo_efficacies / D1_efficacies
+                    HRs_vs_D2 <- Combo_efficacies / D2_efficacies
+                  #HR standard errors
+                    Dose_Comparisons$HR_vs_Control_Treatment_SE[i] <- sd(HRs_vs_D1)
+                    Dose_Comparisons$HR_vs_Drug_to_Add_SE[i] <- sd(HRs_vs_D2)
+                  #HR 95% confidence intervals
+                    Dose_Comparisons$`HR_vs_Control_Treatment_95%_Confidence_Interval`[i] <- paste(sort(HRs_vs_D1, decreasing = FALSE)[c(index_2.5, index_97.5)], collapse = "_")
+                    Dose_Comparisons$`HR_vs_Drug_to_Add_95%_Confidence_Interval`[i] <- paste(sort(HRs_vs_D2, decreasing = FALSE)[c(index_2.5, index_97.5)], collapse = "_")
+                  #Calculating HR p values
+                    #Control therapy
+                      #Calculating one-sided p-value with null hypothesis that HR >= 1
+                        Dose_Comparisons$`p_HR_vs_Control_Treatment>=1`[i] <- sum(HRs_vs_D1 >= 1) / length(HRs_vs_D1)
+                        #If p-value is 0, setting as p < minimum p value that can be estimated using this many simulations
+                          if(Dose_Comparisons$`p_HR_vs_Control_Treatment>=1`[i] == 0){Dose_Comparisons$`p_HR_vs_Control_Treatment>=1`[i] <- paste0("<", 1/n_Simulations)}
+                    #Drug_to_Add
+                      #Calculating one-sided p-value with null hypothesis that HR >= 1
+                        Dose_Comparisons$`p_HR_vs_Drug_to_Add>=1`[i] <- sum(HRs_vs_D2 >= 1) / length(HRs_vs_D2)
+                        #If p-value is 0, setting as p < minimum p value that can be estimated using this many simulations
+                          if(Dose_Comparisons$`p_HR_vs_Drug_to_Add>=1`[i] == 0){Dose_Comparisons$`p_HR_vs_Drug_to_Add>=1`[i] <- paste0("<", 1/n_Simulations)}
+                  #IDAcomboscores
+                    delta_viabilities <- pmin(D1_efficacies, D2_efficacies) - Combo_efficacies
+                    HR_C_over_Mbests <- pmax(HRs_vs_D1, HRs_vs_D2)
+                    MC_IDAcomboscores <- delta_viabilities - delta_viabilities * HR_C_over_Mbests
+                  #IDAcomboscore standard error
+                    Dose_Comparisons$IDA_Comboscore_SE[i] <- sd(MC_IDAcomboscores)
+                  #IDAcomboscore 95% confidence interval
+                    Dose_Comparisons$`IDA_Comboscore_95%_Confidence_Interval`[i] <- paste(sort(MC_IDAcomboscores, decreasing = FALSE)[c(index_2.5, index_97.5)], collapse = "_")
+                  #Calculating IDAcomboscore p-value
+                    Dose_Comparisons$`p_IDA_Comboscore<=0`[i] <- sum(MC_IDAcomboscores <= 0) / length(MC_IDAcomboscores)
+                    #If p-value is 0, setting as p < minimum p value that can be estimated using this many simulations
+                      if(Dose_Comparisons$`p_IDA_Comboscore<=0`[i] == 0){Dose_Comparisons$`p_IDA_Comboscore<=0`[i] <- paste0("<", 1/n_Simulations)}
                 }
             }
-            rm(D1_efficacies, D2_efficacies, Combo_efficacies)
-            if(CalculateIDAComboscoreAndHazardRatios == TRUE){
-              rm(HRs_vs_D1, HRs_vs_D2, delta_viabilities, HR_C_over_Mbests)
+          #Cleaning up
+            rm(D1_Data, D2_Data, Combo_Efficacy, index_2.5, index_97.5, D1_efficacies, D2_efficacies, Combo_efficacies)
+            if(Calculate_IDAcomboscore_And_Hazard_Ratio == TRUE){
+              rm(delta_viabilities, HR_C_over_Mbests, MC_IDAcomboscores, HRs_vs_D1, HRs_vs_D2)
             }
         }
     }
@@ -663,7 +750,7 @@ IDAPredict.ControlPlusOne <- function(Monotherapy_Data, Cell_Line_Name_Column, D
             Dose_Comparisons$Mean_Control_Treatment_Efficacy[i] <- mean(D1_Data$Efficacy)
             Dose_Comparisons$Mean_Drug_to_Add_Efficacy[i] <- mean(D2_Data$Efficacy)
             Dose_Comparisons$Mean_Combo_Efficacy[i] <- mean(Combo_Efficacy)
-            if(CalculateIDAComboscoreAndHazardRatios == TRUE){
+            if(Calculate_IDAcomboscore_And_Hazard_Ratio == TRUE){
               Dose_Comparisons$HR_vs_Control_Treatment[i] <- (1 - Dose_Comparisons$Mean_Combo_Efficacy[i]) / (1 - Dose_Comparisons$Mean_Control_Treatment_Efficacy[i])
               Dose_Comparisons$HR_vs_Drug_to_Add[i] <- (1 - Dose_Comparisons$Mean_Combo_Efficacy[i]) / (1 - Dose_Comparisons$Mean_Drug_to_Add_Efficacy[i])
               delta_hazard <- min((1 - Dose_Comparisons$Mean_Control_Treatment_Efficacy[i]), (1 - Dose_Comparisons$Mean_Drug_to_Add_Efficacy[i])) - (1 - Dose_Comparisons$Mean_Combo_Efficacy[i])
@@ -672,7 +759,7 @@ IDAPredict.ControlPlusOne <- function(Monotherapy_Data, Cell_Line_Name_Column, D
             }
           }
         rm(D1_Data, D2_Data, Combo_Efficacy)
-        if(CalculateIDAComboscoreAndHazardRatios == TRUE){
+        if(Calculate_IDAcomboscore_And_Hazard_Ratio == TRUE){
           rm(delta_hazard, HR_C_over_Mbest)
         }
 
@@ -715,6 +802,14 @@ IDAPredict.ControlPlusOne <- function(Monotherapy_Data, Cell_Line_Name_Column, D
             if(exists("Measured_D1_Data")){
               rm(Measured_D1_Data, Measured_D1_Efficacies, Measured_D1_Efficacy_SEs, Measured_D2_Data, Measured_D2_Efficacies, Measured_D2_Efficacy_SEs)
             }
+          #Resampling cell lines for each simulation with replacement to account for the effect of random variation in cell line selection
+            Selected_CCLs_Per_Sim <- t(apply(D1_MC_Efficacies[[1]], 1, function(x){return(sample(1:length(x), replace = TRUE))}))
+            for(i in 1:length(D1_MC_Efficacies)){
+              D1_MC_Efficacies[[i]] <- t(mapply(function(x,y){return(x[y])}, x = split(D1_MC_Efficacies[[i]], row(D1_MC_Efficacies[[i]])), y = split(Selected_CCLs_Per_Sim, row(Selected_CCLs_Per_Sim))))
+            }
+            for(i in 1:length(D2_MC_Efficacies)){
+              D2_MC_Efficacies[[i]] <- t(mapply(function(x,y){return(x[y])}, x = split(D2_MC_Efficacies[[i]], row(D2_MC_Efficacies[[i]])), y = split(Selected_CCLs_Per_Sim, row(Selected_CCLs_Per_Sim))))
+            }
           #Looping through all dose comparisons and calculating uncertainties in output values
             for(i in 1:nrow(Dose_Comparisons)){
               #Identifying correct dose data for each drug for this comparison.
@@ -723,28 +818,60 @@ IDAPredict.ControlPlusOne <- function(Monotherapy_Data, Cell_Line_Name_Column, D
               #Calculating expected combination efficacy for each cell line
               #using Independent Drug Action
                 Combo_Efficacy <- pmax(D1_Data, D2_Data)
-              #Calculating average efficacy accross all cell lines
+              #Calculating average efficacy across all cell lines
                 D1_efficacies <- rowMeans(D1_Data)
                 D2_efficacies <- rowMeans(D2_Data)
                 Combo_efficacies <- rowMeans(Combo_Efficacy)
-                if(CalculateIDAComboscoreAndHazardRatios == TRUE){
-                  HRs_vs_D1 <- (1-Combo_efficacies) / (1-D1_efficacies)
-                  HRs_vs_D2 <- (1-Combo_efficacies) / (1-D2_efficacies)
-                }
+              #Calculating standard errors
                 Dose_Comparisons$Mean_Control_Treatment_Efficacy_SE[i] <- sd(D1_efficacies)
                 Dose_Comparisons$Mean_Drug_to_Add_Efficacy_SE[i] <- sd(D2_efficacies)
                 Dose_Comparisons$Mean_Combo_Efficacy_SE[i] <- sd(Combo_efficacies)
-                if(CalculateIDAComboscoreAndHazardRatios == TRUE){
-                  Dose_Comparisons$HR_vs_Control_Treatment_SE[i] <- sd(HRs_vs_D1)
-                  Dose_Comparisons$HR_vs_Drug_to_Add_SE[i] <- sd(HRs_vs_D2)
-                  delta_hazards <- pmin((1-D1_efficacies), (1-D2_efficacies)) - (1-Combo_efficacies)
-                  HR_C_over_Mbests <- pmax(HRs_vs_D1, HRs_vs_D2)
-                  Dose_Comparisons$IDA_Comboscore_SE[i] <- sd(delta_hazards - delta_hazards * HR_C_over_Mbests)
+              #Calculating 95% confidence intervals for mean treatment efficacies
+                index_2.5 <- floor(0.025*n_Simulations)
+                index_97.5 <- ceiling(0.975*n_Simulations)
+                Dose_Comparisons$`Mean_Control_Treatment_Efficacy_95%_Confidence_Interval`[i] <- paste(sort(D1_efficacies, decreasing = FALSE)[c(index_2.5, index_97.5)], collapse = "_")
+                Dose_Comparisons$`Mean_Drug_to_Add_Efficacy_95%_Confidence_Interval`[i] <- paste(sort(D2_efficacies, decreasing = FALSE)[c(index_2.5, index_97.5)], collapse = "_")
+                Dose_Comparisons$`Mean_Combo_Efficacy_95%_Confidence_Interval`[i] <- paste(sort(Combo_efficacies, decreasing = FALSE)[c(index_2.5, index_97.5)], collapse = "_")
+              #Calculating simulated IDAcomboscores and HRs
+                if(Calculate_IDAcomboscore_And_Hazard_Ratio == TRUE){
+                  #HRs
+                    HRs_vs_D1 <- (1-Combo_efficacies) / (1-D1_efficacies)
+                    HRs_vs_D2 <- (1-Combo_efficacies) / (1-D2_efficacies)
+                  #HR standard errors
+                    Dose_Comparisons$HR_vs_Control_Treatment_SE[i] <- sd(HRs_vs_D1)
+                    Dose_Comparisons$HR_vs_Drug_to_Add_SE[i] <- sd(HRs_vs_D2)
+                  #HR 95% confidence intervals
+                    Dose_Comparisons$`HR_vs_Control_Treatment_95%_Confidence_Interval`[i] <- paste(sort(HRs_vs_D1, decreasing = FALSE)[c(index_2.5, index_97.5)], collapse = "_")
+                    Dose_Comparisons$`HR_vs_Drug_to_Add_95%_Confidence_Interval`[i] <- paste(sort(HRs_vs_D2, decreasing = FALSE)[c(index_2.5, index_97.5)], collapse = "_")
+                  #Calculating HR p values
+                    #Control therapy
+                      #Calculating one-sided p-value with null hypothesis that HR >= 1
+                        Dose_Comparisons$`p_HR_vs_Control_Treatment>=1`[i] <- sum(HRs_vs_D1 >= 1) / length(HRs_vs_D1)
+                        #If p-value is 0, setting as p < minimum p value that can be estimated using this many simulations
+                          if(Dose_Comparisons$`p_HR_vs_Control_Treatment>=1`[i] == 0){Dose_Comparisons$`p_HR_vs_Control_Treatment>=1`[i] <- paste0("<", 1/n_Simulations)}
+                    #Drug_to_Add
+                      #Calculating one-sided p-value with null hypothesis that HR >= 1
+                        Dose_Comparisons$`p_HR_vs_Drug_to_Add>=1`[i] <- sum(HRs_vs_D2 >= 1) / length(HRs_vs_D2)
+                        #If p-value is 0, setting as p < minimum p value that can be estimated using this many simulations
+                          if(Dose_Comparisons$`p_HR_vs_Drug_to_Add>=1`[i] == 0){Dose_Comparisons$`p_HR_vs_Drug_to_Add>=1`[i] <- paste0("<", 1/n_Simulations)}
+                  #IDAcomboscores
+                    delta_viabilities <- pmin((1-D1_efficacies), (1-D2_efficacies)) - (1-Combo_efficacies)
+                    HR_C_over_Mbests <- pmax(HRs_vs_D1, HRs_vs_D2)
+                    MC_IDAcomboscores <- delta_viabilities - delta_viabilities * HR_C_over_Mbests
+                  #IDAcomboscore standard error
+                    Dose_Comparisons$IDA_Comboscore_SE[i] <- sd(MC_IDAcomboscores)
+                  #IDAcomboscore 95% confidence interval
+                    Dose_Comparisons$`IDA_Comboscore_95%_Confidence_Interval`[i] <- paste(sort(MC_IDAcomboscores, decreasing = FALSE)[c(index_2.5, index_97.5)], collapse = "_")
+                  #Calculating IDAcomboscore p-value
+                    Dose_Comparisons$`p_IDA_Comboscore<=0`[i] <- sum(MC_IDAcomboscores <= 0) / length(MC_IDAcomboscores)
+                    #If p-value is 0, setting as p < minimum p value that can be estimated using this many simulations
+                      if(Dose_Comparisons$`p_IDA_Comboscore<=0`[i] == 0){Dose_Comparisons$`p_IDA_Comboscore<=0`[i] <- paste0("<", 1/n_Simulations)}
                 }
             }
-            rm(D1_efficacies, D2_efficacies, Combo_efficacies)
-            if(CalculateIDAComboscoreAndHazardRatios == TRUE){
-              rm(HRs_vs_D1, HRs_vs_D2, delta_hazards, HR_C_over_Mbests)
+          #Cleaning up
+            rm(D1_Data, D2_Data, Combo_Efficacy, index_2.5, index_97.5, D1_efficacies, D2_efficacies, Combo_efficacies)
+            if(Calculate_IDAcomboscore_And_Hazard_Ratio == TRUE){
+              rm(delta_viabilities, HR_C_over_Mbests, MC_IDAcomboscores, HRs_vs_D1, HRs_vs_D2)
             }
         }
     }
@@ -752,13 +879,22 @@ IDAPredict.ControlPlusOne <- function(Monotherapy_Data, Cell_Line_Name_Column, D
   #Returning Outputs
     #If Calculate_Uncertainty == FALSE, removing SE columns
       if(Calculate_Uncertainty == FALSE){
-        Dose_Comparisons <- Dose_Comparisons[,-which(colnames(Dose_Comparisons) %in% c("Mean_Control_Treatment_Efficacy_SE", "Mean_Drug_to_Add_Efficacy_SE", "Mean_Combo_Efficacy_SE", "HR_vs_Control_Treatment_SE", "HR_vs_Drug_to_Add_SE", "IDA_Comboscore_SE"))]
+        Dose_Comparisons <- Dose_Comparisons[,-which(colnames(Dose_Comparisons) %in% c("Mean_Control_Treatment_Efficacy_SE", "Mean_Control_Treatment_Efficacy_95%_Confidence_Interval", "Mean_Drug_to_Add_Efficacy_SE", "Mean_Drug_to_Add_Efficacy_95%_Confidence_Interval", "Mean_Combo_Efficacy_SE", "Mean_Combo_Efficacy_95%_Confidence_Interval", "HR_vs_Control_Treatment_SE", "HR_vs_Control_Treatment_95%_Confidence_Interval", "p_HR_vs_Control_Treatment>=1", "HR_vs_Drug_to_Add_SE", "HR_vs_Drug_to_Add_95%_Confidence_Interval", "p_HR_vs_Drug_to_Add>=1", "IDA_Comboscore_SE", "IDA_Comboscore_95%_Confidence_Interval", "p_IDA_Comboscore<=0"))]
       }
-    #Replacing "Efficacy" with EfficacyMetricName in column names of Dose_Comparisons
-      colnames(Dose_Comparisons) <- gsub("Efficacy", EfficacyMetricName, colnames(Dose_Comparisons))
+    #If Calculate_IDAcomboscore_And_Hazard_Ratio == FALSE, removing HR and IDAcomboscore columns
+      if(Calculate_IDAcomboscore_And_Hazard_Ratio == FALSE){
+        Dose_Comparisons <- Dose_Comparisons[,-which(colnames(Dose_Comparisons) %in% c("HR_vs_Control_Treatment", "HR_vs_Control_Treatment_SE", "HR_vs_Control_Treatment_95%_Confidence_Interval", "p_HR_vs_Control_Treatment>=1", "HR_vs_Drug_to_Add", "HR_vs_Drug_to_Add_SE", "HR_vs_Drug_to_Add_95%_Confidence_Interval", "p_HR_vs_Drug_to_Add>=1", "IDA_Comboscore", "IDA_Comboscore_SE", "IDA_Comboscore_95%_Confidence_Interval", "p_IDA_Comboscore<=0"))]
+      }
+    #Replacing "Efficacy" with Efficacy_Metric_Name in column names of Dose_Comparisons
+      colnames(Dose_Comparisons) <- gsub("Efficacy", Efficacy_Metric_Name, colnames(Dose_Comparisons))
     #Constructing Return_Object
-      Return_Object <- list(Dose_Comparisons, gsub("^combo:", "", Control_Treatment_Name), Drug_to_Add, Usable_CellLines)
-      names(Return_Object) <- c("Efficacy_Predictions", "Control_Treatment", "Drug_to_Add", "Cell_Lines_Used")
+      if(Return_Bootstrap_Values == FALSE){
+        Return_Object <- list(Dose_Comparisons, gsub("^combo:", "", Control_Treatment_Name), Drug_to_Add, Usable_CellLines)
+        names(Return_Object) <- c("Efficacy_Predictions", "Control_Treatment", "Drug_to_Add", "Cell_Lines_Used")
+      } else if(Return_Bootstrap_Values == TRUE & Calculate_Uncertainty == TRUE){
+        Return_Object <- list(Dose_Comparisons, gsub("^combo:", "", Control_Treatment_Name), Drug_to_Add, Usable_CellLines, D1_MC_Efficacies, D2_MC_Efficacies)
+        names(Return_Object) <- c("Efficacy_Predictions", "Control_Treatment", "Drug_to_Add", "Cell_Lines_Used", "Bootstrap_Control_Efficacies", "Boostrap_Drug_to_Add_Efficacies")
+      }
     #Returning output
       return(Return_Object)
 }

@@ -11,7 +11,7 @@ BlissPredict.TestvsControl(
   Drug_Concentration_Column,
   Efficacy_Column,
   LowerEfficacyIsBetterDrugEffect,
-  EfficacyMetricName = "Efficacy",
+  Efficacy_Metric_Name = "Efficacy",
   Control_Treatment_Drugs,
   Control_Treatment_Drug_Concentrations,
   Test_Treatment_Drugs,
@@ -19,9 +19,9 @@ BlissPredict.TestvsControl(
   Calculate_Uncertainty = FALSE,
   Efficacy_SE_Column = NULL,
   n_Simulations = 1000,
-  CalculateHazardRatio = FALSE,
+  Calculate_Hazard_Ratio = FALSE,
   Average_Duplicate_Records = FALSE,
-  Return_Monte_Carlo_HRs = FALSE
+  Return_Bootstrap_Values = FALSE
 )
 }
 \arguments{
@@ -37,7 +37,7 @@ BlissPredict.TestvsControl(
 
 \item{LowerEfficacyIsBetterDrugEffect}{A logic vector of length 1 indicating whether or not lower values in Efficacy_Column indicate a more effective drug effect (i.e. for viability). Set TRUE if so. Otherwise, set FALSE if higher values in Efficacy_Column indicate a more effective drug response (i.e. for reduced viability).}
 
-\item{EfficacyMetricName}{A character vector of length 1 indicating the name of the efficacy metric being used (i.e. Percent_Viability, Percent_Growth, etc.). Used to correctly label column names in output. Defaults to "Efficacy".}
+\item{Efficacy_Metric_Name}{A character vector of length 1 indicating the name of the efficacy metric being used (i.e. Percent_Viability, Percent_Growth, etc.). Used to correctly label column names in output. Defaults to "Efficacy".}
 
 \item{Control_Treatment_Drugs}{A character vector of length > 0 containing the names of the drugs in the control drug treatment for which efficacy predictions are to be made.}
 
@@ -47,23 +47,37 @@ BlissPredict.TestvsControl(
 
 \item{Test_Treatment_Drug_Concentrations}{A vector of drug concentrations for Test_Treatment_Drugs with the first concentration in Test_Treatment_Drug_Concentrations corresponding to the first drug in Test_Treatment_Drugs etc. Only one concentration may be specified for each drug in the test treatment, but, if a drug is included in both the control and test treatments, there is no need for the same concentration of that drug to be used in both treatments.}
 
-\item{Calculate_Uncertainty}{A logic vector of length one indicating whether or not a Monte Carlo simulation should be performed to estimate uncertainties in the efficacy predictions based on uncertainties in the monotherapy efficacy measurements. Set TRUE if you wish to calculate uncertainties. Defaults to FALSE.}
+\item{Calculate_Uncertainty}{A logic vector of length one indicating whether or not a semi-parametric bootstrap should be performed to estimate uncertainties in the efficacy predictions based on uncertainties in the monotherapy efficacy measurements. Set TRUE if you wish to calculate uncertainties. Defaults to FALSE.}
 
 \item{Efficacy_SE_Column}{A character vector of length 1 containing the name of the column in the Monotherapy_Data data frame which contains the standard errors of measured drug efficacies. Must be specified if Calculate_Uncertainty is set to TRUE.}
 
-\item{n_Simulations}{A positive, non-zero integer vector of length 1 indicating the number of Monte Carlo iterations to be run when calculating output efficacy prediction uncertainties. Must be specified if Calculate_Uncertainty is set to TRUE. Defaults to 1000.}
+\item{n_Simulations}{A positive, integer vector of length 1 with a value >= 40 indicating the number of random samples to be drawn when calculating output efficacy prediction uncertainties. Defaults to 1000.}
 
-\item{CalculateHazardRatio}{A logic vector of length 1 indicating whether or not a Hazard Ratio (HR) should be calculated between the control and test treatments. Set TRUE if so.}
+\item{Calculate_Hazard_Ratio}{A logic vector of length 1 indicating whether or not a Hazard Ratios (HR) should be calculated between the control and test treatments. Set TRUE if so. Should only be set to TRUE for efficacy metrics that range between 0 and 1 (i.e. percent viability). Defaults to FALSE.}
 
 \item{Average_Duplicate_Records}{A logic vector of length 1 indicating whether or not duplicated records (where a cell line has multiple records for being tested with a given drug at a given concentration) should be averaged. If TRUE, Efficacy values are averaged, and, if Calculate_Uncertainty is also TRUE, Efficacy_SE values are added in quadrature and divided by the number of duplicate records for that cell line/drug/concentration set.}
 
-\item{Return_Monte_Carlo_HRs}{A logic vector of length 1 indicating whether or not the function should return the Hazard Ratios(HRs) simulated in a Monte Carlo simulation to estimate the Standard Erorr (SE) of the HR of the test treatment vs the control treatment. This parameter is ignored unless Calculate_Uncertainty = TRUE and CalculateHazardRatios = TRUE. This should be set to TRUE if the simulated HRs are needed to estimate uncertainties in downstream power analyses.}
+\item{Return_Bootstrap_Values}{A logic vector of length 1 indicating whether or not the function should return the Control Efficacies, Test Efficacies, and, if Calculate_Hazard_Ratio = TRUE, Hazard Ratios (HRs) simulated in the semi-parametric bootstrap used to estimate the uncertainties of those values. If equal to TRUE, Calculate_Uncertainty must also equal TRUE.}
 }
 \value{
-If Return_Monte_Carlo_HRs = FALSE, this function returns a list with 4 elements: 1) A data frame with the produced efficacy predictions. 2) A data frame listing the control treatment drug names and concentrations. 3) A data frame listing the test treatment drug names and concentrations. 4) A character vector containing the names of the cell lines used to make the efficacy predictions. If Return_Monte_Carlo_HRs = TRUE & Calculate_Uncertainty = TRUE & CalculateHazardRatio = TRUE, this function returns a list with 5 elements: the first 4 elements being the same as when Return_Monte_Carlo_HRs = FALSE and the fifth element being a numeric vector of the Hazard Ratios simulated during the Monte Carlo simulation to estimate standard errors.
+\itemize{
+\item If Return_Bootstrap_Values = FALSE, this function returns a list with 4 elements: 1) Either a data frame with the calculated efficacy predictions, or, if an error occurred, a character vector of length one with the error message. 2) A data frame listing the control treatment drug names and concentrations. 3) A data frame listing the test treatment drug names and concentrations. 4) A character vector containing the names of the cell lines used to make the efficacy predictions.
+\item If Return_Bootstrap_Values = TRUE & Calculate_Uncertainty = TRUE & Calculate_Hazard_Ratio = FALSE, this function returns a list with 6 elements: the first 4 elements are the same as when Return_Bootstrap_Values = FALSE and the fifth and sixth elements being numeric vectors of, respectively, the control and test viabilities simulated during the semi-parametric bootstrap used to estimate uncertainties.
+\item If Return_Bootstrap_Values = TRUE & Calculate_Uncertainty = TRUE & Calculate_Hazard_Ratio = TRUE, this function returns a list with 7 elements: the first 4 elements are the same as when Return_Bootstrap_Values = FALSE and the fifth, sixth, and seventh elements being numeric vectors of, respectively, the control viabilities, test viabilities, and HRs simulated during the semi-parametric bootstrap used to estimate uncertainties.
+}
 }
 \description{
-This function creates efficacy predictions for a pair of control and test treatments, each treatment consisting of a combination of one or more drugs, using monotherapy efficacy data and the assumptions of Bliss Independence. Concentrations must be specified for each drug in each treatment. IMPORTANT NOTE: This function is only applicable to drug efficacies measured on a scale from 0 to 1.
+This function creates efficacy predictions for a pair of control and test treatments, each treatment consisting of a combination of one or more drugs, using monotherapy efficacy data and the assumptions of Bliss independence. Concentrations must be specified for each drug in each treatment. IMPORTANT NOTE: This function is only applicable to drug efficacies measured on a scale from 0 to 1.
+}
+\details{
+Uncertainty estimates for values calculated by this function are generated using a semi-parametric bootstrap approach. This is performed in several steps.\enumerate{
+\item Control efficacies for each compound/concentration are simulated by random sampling from normal distributions with means equal to the provided calculated efficacies and standard deviations equal to the provided efficacy standard errors.
+\item Test efficacies are simulated in the same fashion as the control efficacies, except in cases when a test drug also exists in the control therapy. In such cases, it is assumed that the efficacy values for this drug are derived from the same dose-response curve for the both the control and test therapies, so each simulated efficacy for that test drug is matched to the corresponding simulated efficacy from that drug in the control therapy using a standard normal deviate.
+\item Efficacy predictions are made for the control and test therapies for each cell line and set of simulated efficacies using the assumptions of Bliss independence.
+\item Cell lines are randomly sampled with replacement for each simulation as many times as there are original cell lines. The simulated control and test therapy efficacies are then sampled according to the sampled cell lines for each simulation.
+\item Mean efficacies are calculated for the control and test therapies for each simulation. These values are then used to calculate simulated HRs.
+\item The simulated distributions of each efficacy metric are used to estimate uncertainties for those metrics.
+}
 }
 \examples{
 #Loading Package
@@ -99,8 +113,8 @@ This function creates efficacy predictions for a pair of control and test treatm
                              Test_Treatment_Drug_Concentrations = c(1, 1.5, "B"),
                              Calculate_Uncertainty = FALSE,
                              LowerEfficacyIsBetterDrugEffect = TRUE,
-                             EfficacyMetricName = "Viability",
-                             CalculateHazardRatio = TRUE,
+                             Efficacy_Metric_Name = "Viability",
+                             Calculate_Hazard_Ratio = TRUE,
                              Average_Duplicate_Records = FALSE)
 
   #For case where drugs in test treatment are at same concentrations as
@@ -116,13 +130,13 @@ This function creates efficacy predictions for a pair of control and test treatm
                              Test_Treatment_Drug_Concentrations = c(2, 3, "B"),
                              Calculate_Uncertainty = FALSE,
                              LowerEfficacyIsBetterDrugEffect = TRUE,
-                             EfficacyMetricName = "Viability",
-                             CalculateHazardRatio = TRUE,
+                             Efficacy_Metric_Name = "Viability",
+                             Calculate_Hazard_Ratio = TRUE,
                              Average_Duplicate_Records = FALSE)
 
 #Creating efficacy predictions for control and test treatments and comparing with
-#uncertainty calculations but without returning Hazard Ratios that are generated
-#using a Monte Carlo simulation to estimate standard errors.
+#uncertainty calculations but without returning simulated values that are generated
+#using a semi-parametric bootstrap to estimate uncertainties.
 
   BlissPredict.TestvsControl(Monotherapy_Data = Fake_Data,
                            Cell_Line_Name_Column = "CellLineNames",
@@ -137,13 +151,13 @@ This function creates efficacy predictions for a pair of control and test treatm
                            Efficacy_SE_Column = "Viability_SE",
                            n_Simulations = 1000,
                            LowerEfficacyIsBetterDrugEffect = TRUE,
-                           EfficacyMetricName = "Viability",
-                           CalculateHazardRatio = TRUE,
+                           Efficacy_Metric_Name = "Viability",
+                           Calculate_Hazard_Ratio = TRUE,
                            Average_Duplicate_Records = FALSE)
 
 #Creating efficacy predictions for control and test treatments and comparing with
-#uncertainty calculations and with returning Hazard Ratios that are generated
-#using a Monte Carlo simulation to estimate standard errors.
+#uncertainty calculations and with returning simulated values that are generated
+#using a semi-parametric bootstrap to estimate standard errors.
 
   BlissPredict.TestvsControl(Monotherapy_Data = Fake_Data,
                            Cell_Line_Name_Column = "CellLineNames",
@@ -158,14 +172,14 @@ This function creates efficacy predictions for a pair of control and test treatm
                            Efficacy_SE_Column = "Viability_SE",
                            n_Simulations = 1000,
                            LowerEfficacyIsBetterDrugEffect = TRUE,
-                           EfficacyMetricName = "Viability",
-                           CalculateHazardRatio = TRUE,
+                           Efficacy_Metric_Name = "Viability",
+                           Calculate_Hazard_Ratio = TRUE,
                            Average_Duplicate_Records = FALSE,
-                           Return_Monte_Carlo_HRs = TRUE)
+                           Return_Bootstrap_Values = TRUE)
 
 #Converting Viabilty to reduction in viability and redoing calculations
-#without returning Monte Carlo Hazard Ratios. Note the change in the
-#LowerEfficacyIsBetterDrugEffect flag from TRUE to FALSE
+#without returning simulated values from semi-parametric boostrap. Note the change
+#in the LowerEfficacyIsBetterDrugEffect flag from TRUE to FALSE
   Reduction_in_Viability <- 1-Viability
   Reduction_in_Viability_SE <- Viability_SE
   Fake_Data <- data.frame(CellLineNames,
@@ -186,8 +200,8 @@ This function creates efficacy predictions for a pair of control and test treatm
                            Efficacy_SE_Column = "Reduction_in_Viability_SE",
                            n_Simulations = 1000,
                            LowerEfficacyIsBetterDrugEffect = FALSE,
-                           EfficacyMetricName = "Reduction_in_Viability",
-                           CalculateHazardRatio = TRUE,
+                           Efficacy_Metric_Name = "Reduction_in_Viability",
+                           Calculate_Hazard_Ratio = TRUE,
                            Average_Duplicate_Records = FALSE)
 
 }

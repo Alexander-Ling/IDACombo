@@ -1,6 +1,6 @@
 #' Predicts and compares Bliss Independence efficacies for a pair of control and test treatments
 #'
-#' This function creates efficacy predictions for a pair of control and test treatments, each treatment consisting of a combination of one or more drugs, using monotherapy efficacy data and the assumptions of Bliss Independence. Concentrations must be specified for each drug in each treatment. IMPORTANT NOTE: This function is only applicable to drug efficacies measured on a scale from 0 to 1.
+#' This function creates efficacy predictions for a pair of control and test treatments, each treatment consisting of a combination of one or more drugs, using monotherapy efficacy data and the assumptions of Bliss independence. Concentrations must be specified for each drug in each treatment. IMPORTANT NOTE: This function is only applicable to drug efficacies measured on a scale from 0 to 1.
 #'
 #' @importFrom stats complete.cases rnorm sd aggregate
 #'
@@ -10,19 +10,33 @@
 #' @param Drug_Concentration_Column A character vector of length 1 containing the name of the column in the Monotherapy_Data data frame which contains drug concentrations.
 #' @param Efficacy_Column A character vector of length 1 containing the name of the column in the Monotherapy_Data data frame which contains measured drug efficacies. Note, for Bliss Independence, efficacy must be expressed as a probability between 0 and 1.
 #' @param LowerEfficacyIsBetterDrugEffect A logic vector of length 1 indicating whether or not lower values in Efficacy_Column indicate a more effective drug effect (i.e. for viability). Set TRUE if so. Otherwise, set FALSE if higher values in Efficacy_Column indicate a more effective drug response (i.e. for reduced viability).
-#' @param EfficacyMetricName A character vector of length 1 indicating the name of the efficacy metric being used (i.e. Percent_Viability, Percent_Growth, etc.). Used to correctly label column names in output. Defaults to "Efficacy".
+#' @param Efficacy_Metric_Name A character vector of length 1 indicating the name of the efficacy metric being used (i.e. Percent_Viability, Percent_Growth, etc.). Used to correctly label column names in output. Defaults to "Efficacy".
 #' @param Control_Treatment_Drugs A character vector of length > 0 containing the names of the drugs in the control drug treatment for which efficacy predictions are to be made.
 #' @param Control_Treatment_Drug_Concentrations A vector of drug concentrations for Control_Treatment_Drugs with the first concentration in Control_Treatment_Drug_Concentrations corresponding to the first drug in Control_Treatment_Drugs etc. Only one concentration may be specified for each drug in the control treatment, but, if a drug is included in both the control and test treatments, there is no need for the same concentration of that drug to be used in both treatments.
 #' @param Test_Treatment_Drugs A character vector of length > 0 containing the names of the drugs in the control drug treatment for which efficacy predictions are to be made.
 #' @param Test_Treatment_Drug_Concentrations A vector of drug concentrations for Test_Treatment_Drugs with the first concentration in Test_Treatment_Drug_Concentrations corresponding to the first drug in Test_Treatment_Drugs etc. Only one concentration may be specified for each drug in the test treatment, but, if a drug is included in both the control and test treatments, there is no need for the same concentration of that drug to be used in both treatments.
-#' @param Calculate_Uncertainty A logic vector of length one indicating whether or not a Monte Carlo simulation should be performed to estimate uncertainties in the efficacy predictions based on uncertainties in the monotherapy efficacy measurements. Set TRUE if you wish to calculate uncertainties. Defaults to FALSE.
+#' @param Calculate_Uncertainty A logic vector of length one indicating whether or not a semi-parametric bootstrap should be performed to estimate uncertainties in the efficacy predictions based on uncertainties in the monotherapy efficacy measurements. Set TRUE if you wish to calculate uncertainties. Defaults to FALSE.
 #' @param Efficacy_SE_Column A character vector of length 1 containing the name of the column in the Monotherapy_Data data frame which contains the standard errors of measured drug efficacies. Must be specified if Calculate_Uncertainty is set to TRUE.
-#' @param n_Simulations A positive, non-zero integer vector of length 1 indicating the number of Monte Carlo iterations to be run when calculating output efficacy prediction uncertainties. Must be specified if Calculate_Uncertainty is set to TRUE. Defaults to 1000.
-#' @param CalculateHazardRatio A logic vector of length 1 indicating whether or not a Hazard Ratio (HR) should be calculated between the control and test treatments. Set TRUE if so.
+#' @param n_Simulations A positive, integer vector of length 1 with a value >= 40 indicating the number of random samples to be drawn when calculating output efficacy prediction uncertainties. Defaults to 1000.
+#' @param Calculate_Hazard_Ratio A logic vector of length 1 indicating whether or not a Hazard Ratios (HR) should be calculated between the control and test treatments. Set TRUE if so. Should only be set to TRUE for efficacy metrics that range between 0 and 1 (i.e. percent viability). Defaults to FALSE.
 #' @param Average_Duplicate_Records A logic vector of length 1 indicating whether or not duplicated records (where a cell line has multiple records for being tested with a given drug at a given concentration) should be averaged. If TRUE, Efficacy values are averaged, and, if Calculate_Uncertainty is also TRUE, Efficacy_SE values are added in quadrature and divided by the number of duplicate records for that cell line/drug/concentration set.
-#' @param Return_Monte_Carlo_HRs A logic vector of length 1 indicating whether or not the function should return the Hazard Ratios(HRs) simulated in a Monte Carlo simulation to estimate the Standard Erorr (SE) of the HR of the test treatment vs the control treatment. This parameter is ignored unless Calculate_Uncertainty = TRUE and CalculateHazardRatios = TRUE. This should be set to TRUE if the simulated HRs are needed to estimate uncertainties in downstream power analyses.
+#' @param Return_Bootstrap_Values A logic vector of length 1 indicating whether or not the function should return the Control Efficacies, Test Efficacies, and, if Calculate_Hazard_Ratio = TRUE, Hazard Ratios (HRs) simulated in the semi-parametric bootstrap used to estimate the uncertainties of those values. If equal to TRUE, Calculate_Uncertainty must also equal TRUE.
 #'
-#' @return If Return_Monte_Carlo_HRs = FALSE, this function returns a list with 4 elements: 1) A data frame with the produced efficacy predictions. 2) A data frame listing the control treatment drug names and concentrations. 3) A data frame listing the test treatment drug names and concentrations. 4) A character vector containing the names of the cell lines used to make the efficacy predictions. If Return_Monte_Carlo_HRs = TRUE & Calculate_Uncertainty = TRUE & CalculateHazardRatio = TRUE, this function returns a list with 5 elements: the first 4 elements being the same as when Return_Monte_Carlo_HRs = FALSE and the fifth element being a numeric vector of the Hazard Ratios simulated during the Monte Carlo simulation to estimate standard errors.
+#'@details
+#'Uncertainty estimates for values calculated by this function are generated using a semi-parametric bootstrap approach. This is performed in several steps.\enumerate{
+#'\item Control efficacies for each compound/concentration are simulated by random sampling from normal distributions with means equal to the provided calculated efficacies and standard deviations equal to the provided efficacy standard errors.
+#'\item Test efficacies are simulated in the same fashion as the control efficacies, except in cases when a test drug also exists in the control therapy. In such cases, it is assumed that the efficacy values for this drug are derived from the same dose-response curve for the both the control and test therapies, so each simulated efficacy for that test drug is matched to the corresponding simulated efficacy from that drug in the control therapy using a standard normal deviate.
+#'\item Efficacy predictions are made for the control and test therapies for each cell line and set of simulated efficacies using the assumptions of Bliss independence.
+#'\item Cell lines are randomly sampled with replacement for each simulation as many times as there are original cell lines. The simulated control and test therapy efficacies are then sampled according to the sampled cell lines for each simulation.
+#'\item Mean efficacies are calculated for the control and test therapies for each simulation. These values are then used to calculate simulated HRs.
+#'\item The simulated distributions of each efficacy metric are used to estimate uncertainties for those metrics.
+#'}
+#'
+#'@return \itemize{
+#'\item If Return_Bootstrap_Values = FALSE, this function returns a list with 4 elements: 1) Either a data frame with the calculated efficacy predictions, or, if an error occurred, a character vector of length one with the error message. 2) A data frame listing the control treatment drug names and concentrations. 3) A data frame listing the test treatment drug names and concentrations. 4) A character vector containing the names of the cell lines used to make the efficacy predictions.
+#'\item If Return_Bootstrap_Values = TRUE & Calculate_Uncertainty = TRUE & Calculate_Hazard_Ratio = FALSE, this function returns a list with 6 elements: the first 4 elements are the same as when Return_Bootstrap_Values = FALSE and the fifth and sixth elements being numeric vectors of, respectively, the control and test viabilities simulated during the semi-parametric bootstrap used to estimate uncertainties.
+#'\item If Return_Bootstrap_Values = TRUE & Calculate_Uncertainty = TRUE & Calculate_Hazard_Ratio = TRUE, this function returns a list with 7 elements: the first 4 elements are the same as when Return_Bootstrap_Values = FALSE and the fifth, sixth, and seventh elements being numeric vectors of, respectively, the control viabilities, test viabilities, and HRs simulated during the semi-parametric bootstrap used to estimate uncertainties.
+#'}
 #'
 #' @examples
 #' #Loading Package
@@ -58,8 +72,8 @@
 #'                              Test_Treatment_Drug_Concentrations = c(1, 1.5, "B"),
 #'                              Calculate_Uncertainty = FALSE,
 #'                              LowerEfficacyIsBetterDrugEffect = TRUE,
-#'                              EfficacyMetricName = "Viability",
-#'                              CalculateHazardRatio = TRUE,
+#'                              Efficacy_Metric_Name = "Viability",
+#'                              Calculate_Hazard_Ratio = TRUE,
 #'                              Average_Duplicate_Records = FALSE)
 #'
 #'   #For case where drugs in test treatment are at same concentrations as
@@ -75,13 +89,13 @@
 #'                              Test_Treatment_Drug_Concentrations = c(2, 3, "B"),
 #'                              Calculate_Uncertainty = FALSE,
 #'                              LowerEfficacyIsBetterDrugEffect = TRUE,
-#'                              EfficacyMetricName = "Viability",
-#'                              CalculateHazardRatio = TRUE,
+#'                              Efficacy_Metric_Name = "Viability",
+#'                              Calculate_Hazard_Ratio = TRUE,
 #'                              Average_Duplicate_Records = FALSE)
 #'
 #' #Creating efficacy predictions for control and test treatments and comparing with
-#' #uncertainty calculations but without returning Hazard Ratios that are generated
-#' #using a Monte Carlo simulation to estimate standard errors.
+#' #uncertainty calculations but without returning simulated values that are generated
+#' #using a semi-parametric bootstrap to estimate uncertainties.
 #'
 #'   BlissPredict.TestvsControl(Monotherapy_Data = Fake_Data,
 #'                            Cell_Line_Name_Column = "CellLineNames",
@@ -96,13 +110,13 @@
 #'                            Efficacy_SE_Column = "Viability_SE",
 #'                            n_Simulations = 1000,
 #'                            LowerEfficacyIsBetterDrugEffect = TRUE,
-#'                            EfficacyMetricName = "Viability",
-#'                            CalculateHazardRatio = TRUE,
+#'                            Efficacy_Metric_Name = "Viability",
+#'                            Calculate_Hazard_Ratio = TRUE,
 #'                            Average_Duplicate_Records = FALSE)
 #'
 #' #Creating efficacy predictions for control and test treatments and comparing with
-#' #uncertainty calculations and with returning Hazard Ratios that are generated
-#' #using a Monte Carlo simulation to estimate standard errors.
+#' #uncertainty calculations and with returning simulated values that are generated
+#' #using a semi-parametric bootstrap to estimate standard errors.
 #'
 #'   BlissPredict.TestvsControl(Monotherapy_Data = Fake_Data,
 #'                            Cell_Line_Name_Column = "CellLineNames",
@@ -117,14 +131,14 @@
 #'                            Efficacy_SE_Column = "Viability_SE",
 #'                            n_Simulations = 1000,
 #'                            LowerEfficacyIsBetterDrugEffect = TRUE,
-#'                            EfficacyMetricName = "Viability",
-#'                            CalculateHazardRatio = TRUE,
+#'                            Efficacy_Metric_Name = "Viability",
+#'                            Calculate_Hazard_Ratio = TRUE,
 #'                            Average_Duplicate_Records = FALSE,
-#'                            Return_Monte_Carlo_HRs = TRUE)
+#'                            Return_Bootstrap_Values = TRUE)
 #'
 #' #Converting Viabilty to reduction in viability and redoing calculations
-#' #without returning Monte Carlo Hazard Ratios. Note the change in the
-#' #LowerEfficacyIsBetterDrugEffect flag from TRUE to FALSE
+#' #without returning simulated values from semi-parametric boostrap. Note the change
+#' #in the LowerEfficacyIsBetterDrugEffect flag from TRUE to FALSE
 #'   Reduction_in_Viability <- 1-Viability
 #'   Reduction_in_Viability_SE <- Viability_SE
 #'   Fake_Data <- data.frame(CellLineNames,
@@ -145,13 +159,13 @@
 #'                            Efficacy_SE_Column = "Reduction_in_Viability_SE",
 #'                            n_Simulations = 1000,
 #'                            LowerEfficacyIsBetterDrugEffect = FALSE,
-#'                            EfficacyMetricName = "Reduction_in_Viability",
-#'                            CalculateHazardRatio = TRUE,
+#'                            Efficacy_Metric_Name = "Reduction_in_Viability",
+#'                            Calculate_Hazard_Ratio = TRUE,
 #'                            Average_Duplicate_Records = FALSE)
 #'
 #' @export
 
-BlissPredict.TestvsControl <- function(Monotherapy_Data, Cell_Line_Name_Column, Drug_Name_Column, Drug_Concentration_Column, Efficacy_Column, LowerEfficacyIsBetterDrugEffect, EfficacyMetricName = "Efficacy", Control_Treatment_Drugs, Control_Treatment_Drug_Concentrations, Test_Treatment_Drugs, Test_Treatment_Drug_Concentrations, Calculate_Uncertainty = FALSE, Efficacy_SE_Column = NULL, n_Simulations = 1000, CalculateHazardRatio = FALSE, Average_Duplicate_Records = FALSE, Return_Monte_Carlo_HRs = FALSE){
+BlissPredict.TestvsControl <- function(Monotherapy_Data, Cell_Line_Name_Column, Drug_Name_Column, Drug_Concentration_Column, Efficacy_Column, LowerEfficacyIsBetterDrugEffect, Efficacy_Metric_Name = "Efficacy", Control_Treatment_Drugs, Control_Treatment_Drug_Concentrations, Test_Treatment_Drugs, Test_Treatment_Drug_Concentrations, Calculate_Uncertainty = FALSE, Efficacy_SE_Column = NULL, n_Simulations = 1000, Calculate_Hazard_Ratio = FALSE, Average_Duplicate_Records = FALSE, Return_Bootstrap_Values = FALSE){
   #Checking that all input variables are in correct format
     if(! is.data.frame(Monotherapy_Data)){
       stop("Monotherapy_Data is not a data frame.")
@@ -183,8 +197,8 @@ BlissPredict.TestvsControl <- function(Monotherapy_Data, Cell_Line_Name_Column, 
     if(! is.vector(LowerEfficacyIsBetterDrugEffect) | ! is.logical(LowerEfficacyIsBetterDrugEffect) | ! length(LowerEfficacyIsBetterDrugEffect) == 1){
       stop("LowerEfficacyIsBetterDrugEffect is not a logical vector of length 1.")
     }
-    if(! is.vector(EfficacyMetricName) | ! is.character(EfficacyMetricName) | ! length(EfficacyMetricName) == 1){
-      stop("EfficacyMetricName is not a character vector of length 1.")
+    if(! is.vector(Efficacy_Metric_Name) | ! is.character(Efficacy_Metric_Name) | ! length(Efficacy_Metric_Name) == 1){
+      stop("Efficacy_Metric_Name is not a character vector of length 1.")
     }
     if(! is.vector(Control_Treatment_Drugs) | ! is.character(Control_Treatment_Drugs) | ! length(Control_Treatment_Drugs) > 0){
       stop("Control_Treatment_Drugs is not a character vector with length > 0.")
@@ -222,19 +236,23 @@ BlissPredict.TestvsControl <- function(Monotherapy_Data, Cell_Line_Name_Column, 
       if(! is.vector(n_Simulations) | ! is.numeric(n_Simulations) | ! length(n_Simulations) == 1){
         stop("Calculate_Uncertainty is TRUE, but n_Simulations is not a numeric vector of length 1.")
       }
-      if(! n_Simulations%%1==0 | ! n_Simulations > 0){
-        stop("Calculate_Uncertainty is TRUE, but n_Simulations is not a positive, non-zero integer.")
+      if(! n_Simulations%%1==0 | ! n_Simulations >= 40){
+        stop("Calculate_Uncertainty is TRUE, but n_Simulations is not a positive integer >= 40.")
       }
     }
-    if(! is.vector(CalculateHazardRatio) | ! is.logical(CalculateHazardRatio) | ! length(CalculateHazardRatio) == 1){
-      stop("CalculateHazardRatio is not a logical vector of length 1.")
+    if(! is.vector(Return_Bootstrap_Values) | ! is.logical(Return_Bootstrap_Values) | ! length(Return_Bootstrap_Values) == 1){
+      stop("Return_Bootstrap_Values is not a logical vector of length 1.")
+    }
+    if(Return_Bootstrap_Values == TRUE & ! Calculate_Uncertainty == TRUE){
+      stop("Return_Bootstrap_Values is equal to TRUE, but Calculate_Uncertainty is not equal to TRUE.")
+    }
+    if(! is.vector(Calculate_Hazard_Ratio) | ! is.logical(Calculate_Hazard_Ratio) | ! length(Calculate_Hazard_Ratio) == 1){
+      stop("Calculate_Hazard_Ratio is not a logical vector of length 1.")
     }
     if(! is.vector(Average_Duplicate_Records) | ! is.logical(Average_Duplicate_Records) | ! length(Average_Duplicate_Records) == 1){
       stop("Average_Duplicate_Records is not a logical vector of length 1.")
     }
-    if(! is.vector(Return_Monte_Carlo_HRs) | ! is.logical(Return_Monte_Carlo_HRs) | ! length(Return_Monte_Carlo_HRs) == 1){
-      stop("Return_Monte_Carlo_HRs is not a logical vector of length 1.")
-    }
+
 
   #Organizing data into standard format based on column names provided for each desired set of information
   #Also subsetting to only include data pertaining to drugs in control or test treatment
@@ -310,18 +328,22 @@ BlissPredict.TestvsControl <- function(Monotherapy_Data, Cell_Line_Name_Column, 
     }
     rm(ControlCellLines, TestCellLines, All_Drug_CellLines)
 
-  #Checking again if at least 2 cell lines remain for all drugs. If not, exiting with NA
+  #Checking again if at least 2 cell lines remain for all drugs. If not, exiting with no
   #predictions and a warning.
     if(! length(Usable_CellLines) >= 2){
       #Returning NA predictions with warning due to too few cell lines.
       warning(paste0("<2 overlapping cell lines available for comparison of (", paste(Control_Treatment_Drugs, Control_Treatment_Drug_Concentrations, sep = "_", collapse = " + "), ") vs. (", paste(Test_Treatment_Drugs, Test_Treatment_Drug_Concentrations, sep = "_", collapse = " + "), ")"))
-      if(Return_Monte_Carlo_HRs == FALSE){
+      if(Return_Bootstrap_Values == FALSE){
         Return_Object <- list("Less than 2 overlapping cell lines available.", as.data.frame(cbind(Control_Treatment_Drugs, Control_Treatment_Drug_Concentrations), stringsAsFactors = F), as.data.frame(cbind(Test_Treatment_Drugs, Test_Treatment_Drug_Concentrations), stringsAsFactors = F), Usable_CellLines)
         names(Return_Object) <- c("Efficacy_Predictions", "Control_Treatment", "Test_Treatment", "Cell_Lines_Used")
         return(Return_Object)
-      } else if(Return_Monte_Carlo_HRs == TRUE & CalculateHazardRatio == TRUE & Calculate_Uncertainty == TRUE){
-        Return_Object <- list("Less than 2 overlapping cell lines available.", as.data.frame(cbind(Control_Treatment_Drugs, Control_Treatment_Drug_Concentrations), stringsAsFactors = F), as.data.frame(cbind(Test_Treatment_Drugs, Test_Treatment_Drug_Concentrations), stringsAsFactors = F), Usable_CellLines, "Less than 2 overlapping cell lines available.")
-        names(Return_Object) <- c("Efficacy_Predictions", "Control_Treatment", "Test_Treatment", "Cell_Lines_Used", "Monte_Carlo_HRs")
+      } else if(Return_Bootstrap_Values == TRUE & Calculate_Hazard_Ratio == TRUE & Calculate_Uncertainty == TRUE){
+        Return_Object <- list("Less than 2 overlapping cell lines available.", as.data.frame(cbind(Control_Treatment_Drugs, Control_Treatment_Drug_Concentrations), stringsAsFactors = F), as.data.frame(cbind(Test_Treatment_Drugs, Test_Treatment_Drug_Concentrations), stringsAsFactors = F), Usable_CellLines, NULL, NULL, NULL)
+        names(Return_Object) <- c("Efficacy_Predictions", "Control_Treatment", "Test_Treatment", "Cell_Lines_Used", "Bootstrap_Control_Efficacies", "Bootstrap_Test_Efficacies", "Bootstrap_HRs")
+        return(Return_Object)
+      } else if(Return_Bootstrap_Values == TRUE & Calculate_Hazard_Ratio == FALSE & Calculate_Uncertainty == TRUE){
+        Return_Object <- list("Less than 2 overlapping cell lines available.", as.data.frame(cbind(Control_Treatment_Drugs, Control_Treatment_Drug_Concentrations), stringsAsFactors = F), as.data.frame(cbind(Test_Treatment_Drugs, Test_Treatment_Drug_Concentrations), stringsAsFactors = F), Usable_CellLines, NULL, NULL)
+        names(Return_Object) <- c("Efficacy_Predictions", "Control_Treatment", "Test_Treatment", "Cell_Lines_Used", "Bootstrap_Control_Efficacies", "Bootstrap_Test_Efficacies")
         return(Return_Object)
       }
     }
@@ -430,8 +452,8 @@ BlissPredict.TestvsControl <- function(Monotherapy_Data, Cell_Line_Name_Column, 
 
 
   #Creating object to store prediction results in
-    Prediction_Results <- as.data.frame(matrix(rep(NA, 6), nrow = 1))
-    colnames(Prediction_Results) <- c("Mean_Control_Treatment_Efficacy", "Mean_Control_Treatment_Efficacy_SE", "Mean_Test_Treatment_Efficacy", "Mean_Test_Treatment_Efficacy_SE", "HR_Test_vs_Control_Treatment", "HR_Test_vs_Control_Treatment_SE")
+    Prediction_Results <- as.data.frame(matrix(rep(NA, 11), nrow = 1))
+    colnames(Prediction_Results) <- c("Mean_Control_Treatment_Efficacy", "Mean_Control_Treatment_Efficacy_SE", "Mean_Control_Treatment_Efficacy_95%_Confidence_Interval", "Mean_Test_Treatment_Efficacy", "Mean_Test_Treatment_Efficacy_SE", "Mean_Test_Treatment_Efficacy_95%_Confidence_Interval", "HR_Test_vs_Control_Treatment", "HR_Test_vs_Control_Treatment_SE", "HR_Test_vs_Control_Treatment_95%_Confidence_Interval", "p_HR>=1", "p_HR=1")
 
   #Performing combination efficacy predictions for cases where lower efficacy values
   #indicate a more effective drug effect (i.e. efficacy = percent viability, percent growth, etc.)
@@ -440,10 +462,10 @@ BlissPredict.TestvsControl <- function(Monotherapy_Data, Cell_Line_Name_Column, 
       #using Bliss Independence for both Control and Test treatment
         Control_Efficacy <- Calc_Bliss_Independence_LowerEfficacyIsBetterDrugEffect(lapply(ControlData, function(x){return(x$Efficacy)}))
         Test_Efficacy <- Calc_Bliss_Independence_LowerEfficacyIsBetterDrugEffect(lapply(TestData, function(x){return(x$Efficacy)}))
-      #Calculating average efficacy accross all cell lines
+      #Calculating average efficacy across all cell lines
         Prediction_Results$Mean_Control_Treatment_Efficacy <- mean(Control_Efficacy)
         Prediction_Results$Mean_Test_Treatment_Efficacy <- mean(Test_Efficacy)
-        if(CalculateHazardRatio == TRUE){
+        if(Calculate_Hazard_Ratio == TRUE){
           Prediction_Results$HR_Test_vs_Control_Treatment <- Prediction_Results$Mean_Test_Treatment_Efficacy / Prediction_Results$Mean_Control_Treatment_Efficacy
         }
         rm(Control_Efficacy, Test_Efficacy)
@@ -491,16 +513,53 @@ BlissPredict.TestvsControl <- function(Monotherapy_Data, Cell_Line_Name_Column, 
           #using Bliss Independence for both Control and Test treatment
             Control_MC_Combo_Efficacies <- Calc_Bliss_Independence_LowerEfficacyIsBetterDrugEffect(Control_MC_Efficacies)
             Test_MC_Combo_Efficacies <- Calc_Bliss_Independence_LowerEfficacyIsBetterDrugEffect(Test_MC_Efficacies)
-          #Calculating average efficacy accross all cell lines
+          #Resampling cell lines for each simulation with replacement to account for the effect of random variation in cell line selection
+            Selected_CCLs_Per_Sim <- t(apply(Control_MC_Combo_Efficacies, 1, function(x){return(sample(1:length(x), replace = TRUE))}))
+            Control_MC_Combo_Efficacies <- t(mapply(function(x,y){return(x[y])}, x = split(Control_MC_Combo_Efficacies, row(Control_MC_Combo_Efficacies)), y = split(Selected_CCLs_Per_Sim, row(Selected_CCLs_Per_Sim))))
+            Test_MC_Combo_Efficacies <- t(mapply(function(x,y){return(x[y])}, x = split(Test_MC_Combo_Efficacies, row(Test_MC_Combo_Efficacies)), y = split(Selected_CCLs_Per_Sim, row(Selected_CCLs_Per_Sim))))
+          #Calculating average efficacy across all cell lines
             Mean_Control_Efficacies_MC <- rowMeans(Control_MC_Combo_Efficacies)
             Mean_Test_Efficacies_MC <- rowMeans(Test_MC_Combo_Efficacies)
+          #Calculating standard errors
             Prediction_Results$Mean_Control_Treatment_Efficacy_SE <- sd(Mean_Control_Efficacies_MC)
             Prediction_Results$Mean_Test_Treatment_Efficacy_SE <- sd(Mean_Test_Efficacies_MC)
-            if(CalculateHazardRatio == TRUE){
+          #Calculating 95% confidence intervals for mean treatment efficacies
+            index_2.5 <- floor(0.025*n_Simulations)
+            index_97.5 <- ceiling(0.975*n_Simulations)
+            Prediction_Results$`Mean_Control_Treatment_Efficacy_95%_Confidence_Interval` <- paste(sort(Mean_Control_Efficacies_MC, decreasing = FALSE)[c(index_2.5, index_97.5)], collapse = "_")
+            Prediction_Results$`Mean_Test_Treatment_Efficacy_95%_Confidence_Interval` <- paste(sort(Mean_Test_Efficacies_MC, decreasing = FALSE)[c(index_2.5, index_97.5)], collapse = "_")
+          #Calculating HR if specified to do so
+            if(Calculate_Hazard_Ratio == TRUE){
               MC_HRs <- Mean_Test_Efficacies_MC / Mean_Control_Efficacies_MC
               Prediction_Results$HR_Test_vs_Control_Treatment_SE <- sd(MC_HRs)
+              #Calculating HR 95% confidence interval
+                Prediction_Results$`HR_Test_vs_Control_Treatment_95%_Confidence_Interval` <- paste(sort(MC_HRs, decreasing = FALSE)[c(index_2.5, index_97.5)], collapse = "_")
+              #Calculating HR p values
+                n_equal_to_1 <- sum(MC_HRs == 1)
+                n_less_than_1 <- sum(MC_HRs < 1)
+                n_greater_than_1 <- sum(MC_HRs > 1)
+                lower_tail <- (n_less_than_1 + 0.5*n_equal_to_1)/length(MC_HRs)
+                upper_tail <- (n_greater_than_1 + 0.5*n_equal_to_1)/length(MC_HRs)
+                #Calculating one-sided p-value with null hypothesis that HR >= 1
+                  Prediction_Results$`p_HR>=1` <- sum(MC_HRs >= 1) / length(MC_HRs)
+                  #If p-value is 0, setting as p < minimum p value that can be estimated using this many simulations
+                    if(Prediction_Results$`p_HR>=1` == 0){Prediction_Results$`p_HR>=1` <- paste0("<", 1/n_Simulations)}
+                #Calculating two-sided p-value with null hypothesis that HR = 1
+                  Prediction_Results$`p_HR=1` <- min(lower_tail, upper_tail)*2
+                  #If p-value is 0, setting as p < minimum p value that can be estimated using this many simulations
+                    if(Prediction_Results$`p_HR=1` == 0){Prediction_Results$`p_HR=1` <- paste0("<", 1/n_Simulations)}
             }
-            rm(Control_MC_Combo_Efficacies, Test_MC_Combo_Efficacies, Mean_Test_Efficacies_MC, Mean_Control_Efficacies_MC)
+          #Cleaning up
+            rm(Control_MC_Combo_Efficacies, Test_MC_Combo_Efficacies, Selected_CCLs_Per_Sim, index_2.5, index_97.5)
+            if(Return_Bootstrap_Values == FALSE){
+              rm(Mean_Test_Efficacies_MC, Mean_Control_Efficacies_MC)
+            }
+            if(Calculate_Hazard_Ratio == TRUE){
+                rm(n_equal_to_1, n_less_than_1, n_greater_than_1, lower_tail, upper_tail)
+              if(Return_Bootstrap_Values == FALSE){
+                rm(MC_HRs)
+              }
+            }
         }
     }
 
@@ -514,7 +573,7 @@ BlissPredict.TestvsControl <- function(Monotherapy_Data, Cell_Line_Name_Column, 
       #Calculating average efficacy accross all cell lines
         Prediction_Results$Mean_Control_Treatment_Efficacy <- mean(Control_Efficacy)
         Prediction_Results$Mean_Test_Treatment_Efficacy <- mean(Test_Efficacy)
-        if(CalculateHazardRatio == TRUE){
+        if(Calculate_Hazard_Ratio == TRUE){
           Prediction_Results$HR_Test_vs_Control_Treatment <- (1 - Prediction_Results$Mean_Test_Treatment_Efficacy) / (1 - Prediction_Results$Mean_Control_Treatment_Efficacy)
         }
         rm(Control_Efficacy, Test_Efficacy)
@@ -562,39 +621,77 @@ BlissPredict.TestvsControl <- function(Monotherapy_Data, Cell_Line_Name_Column, 
           #using Bliss Independence for both Control and Test treatment
             Control_MC_Combo_Efficacies <- Calc_Bliss_Independence_HigherEfficacyIsBetterDrugEffect(Control_MC_Efficacies)
             Test_MC_Combo_Efficacies <- Calc_Bliss_Independence_HigherEfficacyIsBetterDrugEffect(Test_MC_Efficacies)
+          #Resampling cell lines for each simulation with replacement to account for the effect of random variation in cell line selection
+            Selected_CCLs_Per_Sim <- t(apply(Control_MC_Combo_Efficacies, 1, function(x){return(sample(1:length(x), replace = TRUE))}))
+            Control_MC_Combo_Efficacies <- t(mapply(function(x,y){return(x[y])}, x = split(Control_MC_Combo_Efficacies, row(Control_MC_Combo_Efficacies)), y = split(Selected_CCLs_Per_Sim, row(Selected_CCLs_Per_Sim))))
+            Test_MC_Combo_Efficacies <- t(mapply(function(x,y){return(x[y])}, x = split(Test_MC_Combo_Efficacies, row(Test_MC_Combo_Efficacies)), y = split(Selected_CCLs_Per_Sim, row(Selected_CCLs_Per_Sim))))
           #Calculating average efficacy accross all cell lines
             Mean_Control_Efficacies_MC <- rowMeans(Control_MC_Combo_Efficacies)
             Mean_Test_Efficacies_MC <- rowMeans(Test_MC_Combo_Efficacies)
+          #Calculating standard errors
             Prediction_Results$Mean_Control_Treatment_Efficacy_SE <- sd(Mean_Control_Efficacies_MC)
             Prediction_Results$Mean_Test_Treatment_Efficacy_SE <- sd(Mean_Test_Efficacies_MC)
-            if(CalculateHazardRatio == TRUE){
+          #Calculating 95% confidence intervals for mean treatment efficacies
+            index_2.5 <- floor(0.025*n_Simulations)
+            index_97.5 <- ceiling(0.975*n_Simulations)
+            Prediction_Results$`Mean_Control_Treatment_Efficacy_95%_Confidence_Interval` <- paste(sort(Mean_Control_Efficacies_MC, decreasing = FALSE)[c(index_2.5, index_97.5)], collapse = "_")
+            Prediction_Results$`Mean_Test_Treatment_Efficacy_95%_Confidence_Interval` <- paste(sort(Mean_Test_Efficacies_MC, decreasing = FALSE)[c(index_2.5, index_97.5)], collapse = "_")
+          #Calculating HRs if specified to do so
+            if(Calculate_Hazard_Ratio == TRUE){
               MC_HRs <- (1 - Mean_Test_Efficacies_MC) / (1 - Mean_Control_Efficacies_MC)
               Prediction_Results$HR_Test_vs_Control_Treatment_SE <- sd(MC_HRs)
+              #Calculating HR 95% confidence interval
+                Prediction_Results$`HR_Test_vs_Control_Treatment_95%_Confidence_Interval` <- paste(sort(MC_HRs, decreasing = FALSE)[c(index_2.5, index_97.5)], collapse = "_")
+              #Calculating HR p values
+                n_equal_to_1 <- sum(MC_HRs == 1)
+                n_less_than_1 <- sum(MC_HRs < 1)
+                n_greater_than_1 <- sum(MC_HRs > 1)
+                lower_tail <- (n_less_than_1 + 0.5*n_equal_to_1)/length(MC_HRs)
+                upper_tail <- (n_greater_than_1 + 0.5*n_equal_to_1)/length(MC_HRs)
+                #Calculating one-sided p-value with null hypothesis that HR >= 1
+                  Prediction_Results$`p_HR>=1` <- sum(MC_HRs >= 1) / length(MC_HRs)
+                  #If p-value is 0, setting as p < minimum p value that can be estimated using this many simulations
+                    if(Prediction_Results$`p_HR>=1` == 0){Prediction_Results$`p_HR>=1` <- paste0("<", 1/n_Simulations)}
+                #Calculating two-sided p-value with null hypothesis that HR = 1
+                  Prediction_Results$`p_HR=1` <- min(lower_tail, upper_tail)*2
+                  #If p-value is 0, setting as p < minimum p value that can be estimated using this many simulations
+                    if(Prediction_Results$`p_HR=1` == 0){Prediction_Results$`p_HR=1` <- paste0("<", 1/n_Simulations)}
             }
-            rm(Control_MC_Combo_Efficacies, Test_MC_Combo_Efficacies, Mean_Test_Efficacies_MC, Mean_Control_Efficacies_MC)
+          #Cleaning up
+            rm(Control_MC_Combo_Efficacies, Test_MC_Combo_Efficacies, Selected_CCLs_Per_Sim, index_2.5, index_97.5)
+            if(Return_Bootstrap_Values == FALSE){
+              rm(Mean_Test_Efficacies_MC, Mean_Control_Efficacies_MC)
+            }
+            if(Calculate_Hazard_Ratio == TRUE){
+                rm(n_equal_to_1, n_less_than_1, n_greater_than_1, lower_tail, upper_tail)
+              if(Return_Bootstrap_Values == FALSE){
+                rm(MC_HRs)
+              }
+            }
         }
     }
 
   #Returning Outputs
     #If Calculate_Uncertainty == FALSE, removing SE columns
       if(Calculate_Uncertainty == FALSE){
-        Prediction_Results <- Prediction_Results[,-which(colnames(Prediction_Results) %in% c("Mean_Control_Treatment_Efficacy_SE", "Mean_Test_Treatment_Efficacy_SE", "HR_Test_vs_Control_Treatment_SE"))]
+        Prediction_Results <- Prediction_Results[,-which(colnames(Prediction_Results) %in% c("Mean_Control_Treatment_Efficacy_SE", "Mean_Control_Treatment_Efficacy_95%_Confidence_Interval", "Mean_Test_Treatment_Efficacy_SE", "Mean_Test_Treatment_Efficacy_95%_Confidence_Interval", "HR_Test_vs_Control_Treatment_SE", "HR_Test_vs_Control_Treatment_95%_Confidence_Interval", "p_HR>=1", "p_HR=1"))]
       }
-    #If CalculateHazardRatio == FALSE, removing HR columns
-      if(CalculateHazardRatio == FALSE){
-        Prediction_Results <- Prediction_Results[,-which(colnames(Prediction_Results) %in% c("HR_Test_vs_Control_Treatment", "HR_Test_vs_Control_Treatment_SE"))]
+    #If Calculate_Hazard_Ratio == FALSE, removing HR columns
+      if(Calculate_Hazard_Ratio == FALSE){
+        Prediction_Results <- Prediction_Results[,-which(colnames(Prediction_Results) %in% c("HR_Test_vs_Control_Treatment", "HR_Test_vs_Control_Treatment_SE", "HR_Test_vs_Control_Treatment_95%_Confidence_Interval", "p_HR>=1", "p_HR=1"))]
       }
-    #Replacing "Efficacy" with EfficacyMetricName in column names of Dose_Comparisons
-      colnames(Prediction_Results) <- gsub("Efficacy", EfficacyMetricName, colnames(Prediction_Results))
+    #Replacing "Efficacy" with Efficacy_Metric_Name in column names of Dose_Comparisons
+      colnames(Prediction_Results) <- gsub("Efficacy", Efficacy_Metric_Name, colnames(Prediction_Results))
     #Constructing Return_Object
-      if(Return_Monte_Carlo_HRs == FALSE){
+      if(Return_Bootstrap_Values == FALSE){
         Return_Object <- list(Prediction_Results, as.data.frame(cbind(Control_Treatment_Drugs, Control_Treatment_Drug_Concentrations), stringsAsFactors = F), as.data.frame(cbind(Test_Treatment_Drugs, Test_Treatment_Drug_Concentrations), stringsAsFactors = F), Usable_CellLines)
         names(Return_Object) <- c("Efficacy_Predictions", "Control_Treatment", "Test_Treatment", "Cell_Lines_Used")
-        return(Return_Object)
-      } else if(Return_Monte_Carlo_HRs == TRUE & CalculateHazardRatio == TRUE & Calculate_Uncertainty == TRUE){
-        Return_Object <- list(Prediction_Results, as.data.frame(cbind(Control_Treatment_Drugs, Control_Treatment_Drug_Concentrations), stringsAsFactors = F), as.data.frame(cbind(Test_Treatment_Drugs, Test_Treatment_Drug_Concentrations), stringsAsFactors = F), Usable_CellLines, MC_HRs)
-        names(Return_Object) <- c("Efficacy_Predictions", "Control_Treatment", "Test_Treatment", "Cell_Lines_Used", "Monte_Carlo_HRs")
-        return(Return_Object)
+      } else if(Return_Bootstrap_Values == TRUE & Calculate_Hazard_Ratio == FALSE & Calculate_Uncertainty == TRUE){
+        Return_Object <- list(Prediction_Results, as.data.frame(cbind(Control_Treatment_Drugs, Control_Treatment_Drug_Concentrations), stringsAsFactors = F), as.data.frame(cbind(Test_Treatment_Drugs, Test_Treatment_Drug_Concentrations), stringsAsFactors = F), Usable_CellLines, Mean_Control_Efficacies_MC, Mean_Test_Efficacies_MC)
+        names(Return_Object) <- c("Efficacy_Predictions", "Control_Treatment", "Test_Treatment", "Cell_Lines_Used", "Bootstrap_Mean_Control_Efficacies", "Bootstrap_Mean_Test_Efficacies")
+      } else if(Return_Bootstrap_Values == TRUE & Calculate_Hazard_Ratio == TRUE & Calculate_Uncertainty == TRUE){
+        Return_Object <- list(Prediction_Results, as.data.frame(cbind(Control_Treatment_Drugs, Control_Treatment_Drug_Concentrations), stringsAsFactors = F), as.data.frame(cbind(Test_Treatment_Drugs, Test_Treatment_Drug_Concentrations), stringsAsFactors = F), Usable_CellLines, Mean_Control_Efficacies_MC, Mean_Test_Efficacies_MC, MC_HRs)
+        names(Return_Object) <- c("Efficacy_Predictions", "Control_Treatment", "Test_Treatment", "Cell_Lines_Used", "Bootstrap_Mean_Control_Efficacies", "Bootstrap_Mean_Test_Efficacies", "Bootstrap_HRs")
       }
     #Returning output
       return(Return_Object)

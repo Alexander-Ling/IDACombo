@@ -1,7 +1,7 @@
 Package: IDACombo
 Type: Package
 Title: Predict Drug Combination Efficacy using Independent Drug Action
-Version: 0.9.1
+Version: 1.0.0
 Author: Alexander Ling
 Maintainer: Alexander Ling <alexander.l.ling@gmail.com>
 Description: Predicts drug combination efficacies using monotherapy cell line efficacies under the assumptions of independent drug action.

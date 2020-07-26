@@ -11,15 +11,16 @@ IDAPredict.ControlPlusOne(
   Drug_Concentration_Column,
   Efficacy_Column,
   LowerEfficacyIsBetterDrugEffect,
-  EfficacyMetricName = "Efficacy",
+  Efficacy_Metric_Name = "Efficacy",
   Control_Treatment_Drugs,
   Control_Treatment_Drug_Concentrations,
   Drug_to_Add,
   Calculate_Uncertainty = FALSE,
   Efficacy_SE_Column = NULL,
   n_Simulations = 1000,
-  CalculateIDAComboscoreAndHazardRatios = FALSE,
-  Average_Duplicate_Records = FALSE
+  Calculate_IDAcomboscore_And_Hazard_Ratio = FALSE,
+  Average_Duplicate_Records = FALSE,
+  Return_Bootstrap_Values = FALSE
 )
 }
 \arguments{
@@ -35,7 +36,7 @@ IDAPredict.ControlPlusOne(
 
 \item{LowerEfficacyIsBetterDrugEffect}{A logic vector of length 1 indicating whether or not lower values in Efficacy_Column indicate a more effective drug effect (i.e. for percent viability). Set TRUE if so. Otherwise, set FALSE if higher values in Efficacy_Column indicate a more effective drug response (i.e. for percent cell death).}
 
-\item{EfficacyMetricName}{A character vector of length 1 indicating the name of the efficacy metric being used (i.e. Percent_Viability, Percent_Growth, etc.). Used to correctly label column names in output. Defaults to "Efficacy".}
+\item{Efficacy_Metric_Name}{A character vector of length 1 indicating the name of the efficacy metric being used (i.e. Percent_Viability, Percent_Growth, etc.). Used to correctly label column names in output. Defaults to "Efficacy".}
 
 \item{Control_Treatment_Drugs}{A character vector of length > 0 containing the names of the drugs in the control drug treatment for which efficacy predictions are to be made.}
 
@@ -47,17 +48,32 @@ IDAPredict.ControlPlusOne(
 
 \item{Efficacy_SE_Column}{A character vector of length 1 containing the name of the column in the Monotherapy_Data data frame which contains the standard errors of measured drug efficacies. Must be specified if Calculate_Uncertainty is set to TRUE.}
 
-\item{n_Simulations}{A positive, non-zero integer vector of length 1 indicating the number of Monte Carlo iterations to be run when calculating output efficacy prediction uncertainties. Must be specified if Calculate_Uncertainty is set to TRUE. Defaults to 1000.}
+\item{n_Simulations}{A positive, integer vector of length 1 with a value >= 40 indicating the number of random samples to be drawn when calculating output efficacy prediction uncertainties. Defaults to 1000.}
 
-\item{CalculateIDAComboscoreAndHazardRatios}{A logic vector of length 1 indicating whether or not IDA-Comboscores and Hazard Ratios (HRs) should be calculated between monotherapies and the drug combination. Set TRUE if so. Should only be set to TRUE for efficacy metrics that range between 0 and 1 (i.e. percent viability). Defaults to FALSE.}
+\item{Calculate_IDAcomboscore_And_Hazard_Ratio}{A logic vector of length 1 indicating whether or not IDA-Comboscores and Hazard Ratios (HRs) should be calculated between monotherapies and the drug combination. Set TRUE if so. Should only be set to TRUE for efficacy metrics that range between 0 and 1 (i.e. percent viability). Defaults to FALSE.}
 
 \item{Average_Duplicate_Records}{A logic vector of length 1 indicating whether or not duplicated records (where a cell line has multiple records for being tested with a given drug at a given concentration) should be averaged. If TRUE, Efficacy values are averaged, and, if Calculate_Uncertainty is also TRUE, Efficacy_SE values are added in quadrature and divided by the number of duplicate records for that cell line/drug/concentration set.}
+
+\item{Return_Bootstrap_Values}{A logic vector of length 1 indicating whether or not the function should return the Drug1 Efficacies and Drug2 Efficacies simulated in the semi-parametric bootstrap used to estimate the uncertainties of those values. If equal to TRUE, Calculate_Uncertainty must also equal TRUE.}
 }
 \value{
-Returns a list with 4 elements: 1) A data frame with the produced efficacy predictions. 2) A character string indicating the control treatment drugs (separated by +). 3) A character string indicating the name of drug to be added to the control treatment to make a new combination. 4) A character vector containing the names of the cell lines used to make the efficacy predictions.
+\itemize{
+\item If Return_Bootstrap_Values = FALSE, this function returns a list with 4 elements: 1) Either a data frame with the calculated efficacy predictions, or, if an error occurred, a character vector of length one with the error message. 2) A character value with the name of the control therapy 3) A character value with the name of Drug_to_Add 4) A character vector containing the names of the cell lines used to make the efficacy predictions.
+\item If Return_Bootstrap_Values = TRUE & Calculate_Uncertainty = TRUE, this function returns a list with 6 elements: the first 4 elements are the same as when Return_Bootstrap_Values = FALSE and the fifth and sixth elements are numeric vectors of, respectively, the control therapy and Drug_to_Add viabilities simulated during the semi-parametric bootstrap used to estimate uncertainties.
+}
 }
 \description{
 This function creates efficacy predictions for combinations of a control therapy + 1 additional drug using monotherapy efficacy data and the assumptions of independent drug action. When data is available for multiple concentrations of the drug to add, efficacy predictions are made for all possible concentration combinations.
+}
+\details{
+Uncertainty estimates for values calculated by this function are generated using a semi-parametric bootstrap approach. This is performed in several steps.\enumerate{
+\item Control treatment efficacies for each drug/concentration are simulated by random sampling from normal distributions with means equal to the provided calculated efficacies and standard deviations equal to the provided efficacy standard errors.
+\item Drug_to_Add efficacies are simulated in the same fashion as for control treatment efficacies, except in cases when Drug_to_Add is in Control_Treatment_Drugs. In such cases, it is assumed that the efficacy values for Drug_to_Add and its match in Control_Treatment_Drugs are derived from the same dose-response curve, so each simulated efficacy for Drug_to_Add is matched to the corresponding simulated efficacy for that drug in Control_Treatment_Drugs using a standard normal deviate.
+\item Efficacy predictions are made for the combination of Control_Treatment_Drugs + Drug_to_Add for each cell line and set of simulated efficacies using the assumptions of independent drug action.
+\item Cell lines are randomly sampled with replacement for each simulation as many times as there are original cell lines. The simulated Control_Treatment_Drugs monotherapy efficacies and combination efficacies are then sampled according to the sampled cell lines for each simulation.
+\item Mean efficacies are calculated for the control and new combination treatments for each simulation. If specified to do so, these values are then used to calculate simulated HRs and IDAcomboscores.
+\item The simulated distributions of each efficacy metric are used to estimate uncertainties for those metrics.
+}
 }
 \examples{
 #Loading Package
@@ -87,8 +103,8 @@ This function creates efficacy predictions for combinations of a control therapy
                    Drug_to_Add = "D3",
                    Calculate_Uncertainty = FALSE,
                    LowerEfficacyIsBetterDrugEffect = TRUE,
-                   EfficacyMetricName = "Viability",
-                   CalculateIDAComboscoreAndHazardRatios = TRUE,
+                   Efficacy_Metric_Name = "Viability",
+                   Calculate_IDAcomboscore_And_Hazard_Ratio = TRUE,
                    Average_Duplicate_Records = FALSE)
 
 #Creating efficacy predictions for D1+D2 + D3 with uncertainty calculations
@@ -103,8 +119,8 @@ This function creates efficacy predictions for combinations of a control therapy
                    Calculate_Uncertainty = TRUE,
                    Efficacy_SE_Column = "Viability_SE",
                    LowerEfficacyIsBetterDrugEffect = TRUE,
-                   EfficacyMetricName = "Viability",
-                   CalculateIDAComboscoreAndHazardRatios = TRUE,
+                   Efficacy_Metric_Name = "Viability",
+                   Calculate_IDAcomboscore_And_Hazard_Ratio = TRUE,
                    Average_Duplicate_Records = FALSE)
 
 #Converting Viabilty to reduction in viability and redoing calculations
@@ -127,13 +143,13 @@ This function creates efficacy predictions for combinations of a control therapy
                    Calculate_Uncertainty = TRUE,
                    LowerEfficacyIsBetterDrugEffect = FALSE,
                    Efficacy_SE_Column = "Reduction_in_Viability_SE",
-                   EfficacyMetricName = "Reduction_In_Viability",
-                   CalculateIDAComboscoreAndHazardRatios = TRUE,
+                   Efficacy_Metric_Name = "Reduction_In_Viability",
+                   Calculate_IDAcomboscore_And_Hazard_Ratio = TRUE,
                    Average_Duplicate_Records = FALSE)
 
 #Changing efficacy metric to percent growth (range -1 to 1)
 #Note that calculating Hazard Ratios and IDA-Comboscores is no longer valid, so
-#CalculateIDAComboscoreAndHazardRatios is set to FALSE.
+#Calculate_IDAcomboscore_And_Hazard_Ratio is set to FALSE.
   Percent_Growth <- c(sample(seq(0.4,1,length.out = 10), 6, replace = TRUE),
                       sample(seq(-0.4,0.2,length.out = 10), 6, replace = TRUE),
                       sample(seq(-0.2,0.3,length.out = 10), 6, replace = TRUE),
@@ -157,8 +173,8 @@ This function creates efficacy predictions for combinations of a control therapy
                    Calculate_Uncertainty = TRUE,
                    LowerEfficacyIsBetterDrugEffect = TRUE,
                    Efficacy_SE_Column = "Percent_Growth_SE",
-                   CalculateIDAComboscoreAndHazardRatios = FALSE,
-                   EfficacyMetricName = "Percent_Growth",
+                   Calculate_IDAcomboscore_And_Hazard_Ratio = FALSE,
+                   Efficacy_Metric_Name = "Percent_Growth",
                    Average_Duplicate_Records = FALSE)
 
 #Adding duplicate records for each cell line, and showing behavior with
@@ -188,8 +204,8 @@ This function creates efficacy predictions for combinations of a control therapy
                    Calculate_Uncertainty = TRUE,
                    LowerEfficacyIsBetterDrugEffect = TRUE,
                    Efficacy_SE_Column = "Percent_Growth_SE",
-                   CalculateIDAComboscoreAndHazardRatios = FALSE,
-                   EfficacyMetricName = "Percent_Growth",
+                   Calculate_IDAcomboscore_And_Hazard_Ratio = FALSE,
+                   Efficacy_Metric_Name = "Percent_Growth",
                    Average_Duplicate_Records = FALSE)
 
 #Now setting to average duplicate values.
@@ -205,7 +221,7 @@ This function creates efficacy predictions for combinations of a control therapy
                    Calculate_Uncertainty = TRUE,
                    LowerEfficacyIsBetterDrugEffect = TRUE,
                    Efficacy_SE_Column = "Percent_Growth_SE",
-                   CalculateIDAComboscoreAndHazardRatios = FALSE,
-                   EfficacyMetricName = "Percent_Growth",
+                   Calculate_IDAcomboscore_And_Hazard_Ratio = FALSE,
+                   Efficacy_Metric_Name = "Percent_Growth",
                    Average_Duplicate_Records = TRUE)
 }
