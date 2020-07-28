@@ -540,9 +540,10 @@ IDAPredict.TestvsControl <- function(Monotherapy_Data, Cell_Line_Name_Column, Dr
                     Measured_Test_Efficacies <- matrix(Measured_Test_Data$Efficacy, ncol = length(Measured_Test_Data$Efficacy), nrow = n_Simulations, byrow = TRUE, dimnames = list(NULL, Measured_Test_Data$CellLine))
                     Measured_Test_Efficacy_SEs <- matrix(Measured_Test_Data$Efficacy_SE, ncol = length(Measured_Test_Data$Efficacy_SE), nrow = n_Simulations, byrow = TRUE, dimnames = list(NULL, Measured_Test_Data$CellLine))
                     Test_MC_Efficacies[[i]] <- Measured_Test_Efficacies + (SEs_deviated * Measured_Test_Efficacy_SEs)
+                } else {
+                  #If test drug is not in control therapy, randomly sampling
+                    Test_MC_Efficacies[[i]] <- apply(TestData[[i]][,c("Efficacy", "Efficacy_SE")], 1, function(x){rnorm(n = n_Simulations, mean = x[1], sd = x[2])})
                 }
-              #If test drug is not in control therapy, randomly sampling
-                Test_MC_Efficacies[[i]] <- apply(TestData[[i]][,c("Efficacy", "Efficacy_SE")], 1, function(x){rnorm(n = n_Simulations, mean = x[1], sd = x[2])})
             }
             names(Test_MC_Efficacies) <- names(TestData)
             if(exists("Measured_Control_Data")){
@@ -648,9 +649,10 @@ IDAPredict.TestvsControl <- function(Monotherapy_Data, Cell_Line_Name_Column, Dr
                     Measured_Test_Efficacies <- matrix(Measured_Test_Data$Efficacy, ncol = length(Measured_Test_Data$Efficacy), nrow = n_Simulations, byrow = TRUE, dimnames = list(NULL, Measured_Test_Data$CellLine))
                     Measured_Test_Efficacy_SEs <- matrix(Measured_Test_Data$Efficacy_SE, ncol = length(Measured_Test_Data$Efficacy_SE), nrow = n_Simulations, byrow = TRUE, dimnames = list(NULL, Measured_Test_Data$CellLine))
                     Test_MC_Efficacies[[i]] <- Measured_Test_Efficacies + (SEs_deviated * Measured_Test_Efficacy_SEs)
+                }else {
+                  #If test drug is not in control therapy, randomly sampling
+                    Test_MC_Efficacies[[i]] <- apply(TestData[[i]][,c("Efficacy", "Efficacy_SE")], 1, function(x){rnorm(n = n_Simulations, mean = x[1], sd = x[2])})
                 }
-              #If test drug is not in control therapy, randomly sampling
-                Test_MC_Efficacies[[i]] <- apply(TestData[[i]][,c("Efficacy", "Efficacy_SE")], 1, function(x){rnorm(n = n_Simulations, mean = x[1], sd = x[2])})
             }
             names(Test_MC_Efficacies) <- names(TestData)
             if(exists("Measured_Control_Data")){

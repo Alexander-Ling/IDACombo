@@ -490,8 +490,21 @@ IDAPredict.2drug <- function(Monotherapy_Data, Cell_Line_Name_Column, Drug_Name_
           #measured efficacies and SE's
             D1_MC_Efficacies <- as.list(NULL)
             for(i in 1:length(Drug1Data)){
-              D1_MC_Efficacies[[i]] <- apply(Drug1Data[[i]][,c("Efficacy", "Efficacy_SE")], 1, function(x){rnorm(n = n_Simulations, mean = x[1], sd = x[2])})
-              colnames(D1_MC_Efficacies[[i]]) <- Drug1Data[[i]]$CellLine
+              if(i == 1){
+                D1_MC_Efficacies[[i]] <- apply(Drug1Data[[i]][,c("Efficacy", "Efficacy_SE")], 1, function(x){rnorm(n = n_Simulations, mean = x[1], sd = x[2])})
+                colnames(D1_MC_Efficacies[[i]]) <- Drug1Data[[i]]$CellLine
+                Measured_D1_Data <- Drug1Data[[names(Drug1Data)[i]]][,c("CellLine", "Efficacy", "Efficacy_SE")]
+                Measured_D1_Data <- Measured_D1_Data[match(colnames(D1_MC_Efficacies[[1]]), Measured_D1_Data$CellLine),]
+                Measured_D1_Efficacies <- matrix(Measured_D1_Data$Efficacy, ncol = length(Measured_D1_Data$Efficacy), nrow = n_Simulations, byrow = TRUE)
+                Measured_D1_Efficacy_SEs <- matrix(Measured_D1_Data$Efficacy_SE, ncol = length(Measured_D1_Data$Efficacy_SE), nrow = n_Simulations, byrow = TRUE)
+                SEs_deviated <- (D1_MC_Efficacies[[1]] - Measured_D1_Efficacies) / Measured_D1_Efficacy_SEs
+              } else {
+                Measured_D1_Data <- Drug1Data[[names(Drug1Data)[i]]][,c("CellLine", "Efficacy", "Efficacy_SE")]
+                Measured_D1_Data <- Measured_D1_Data[match(colnames(SEs_deviated), Measured_D1_Data$CellLine),]
+                Measured_D1_Efficacies <- matrix(Measured_D1_Data$Efficacy, ncol = length(Measured_D1_Data$Efficacy), nrow = n_Simulations, byrow = TRUE, dimnames = list(NULL, Measured_D1_Data$CellLine))
+                Measured_D1_Efficacy_SEs <- matrix(Measured_D1_Data$Efficacy_SE, ncol = length(Measured_D1_Data$Efficacy_SE), nrow = n_Simulations, byrow = TRUE, dimnames = list(NULL, Measured_D1_Data$CellLine))
+                D1_MC_Efficacies[[i]] <- Measured_D1_Efficacies + (SEs_deviated * Measured_D1_Efficacy_SEs)
+              }
             }
             names(D1_MC_Efficacies) <- names(Drug1Data)
             D2_MC_Efficacies <- as.list(NULL)
@@ -501,27 +514,24 @@ IDAPredict.2drug <- function(Monotherapy_Data, Cell_Line_Name_Column, Drug_Name_
               #the measured value each simulated D1 viability fell, and matching that distance in
               #the simulated D2 viabilities. This is done because D1 and D2 viabilities are not independent in
               #this case--they will have come from the same dose-response curve.
-                if(names(Drug2Data)[i] %in% names(Drug1Data)){
-                  #Calculating the number of SEs away from the measured value each simulated value is for D1
-                    Measured_D1_Data <- Drug1Data[[names(Drug2Data)[i]]][,c("CellLine", "Efficacy", "Efficacy_SE")]
-                    Measured_D1_Data <- Measured_D1_Data[match(colnames(D1_MC_Efficacies[[names(Drug2Data)[i]]]), Measured_D1_Data$CellLine),]
-                    Measured_D1_Efficacies <- matrix(Measured_D1_Data$Efficacy, ncol = length(Measured_D1_Data$Efficacy), nrow = n_Simulations, byrow = TRUE)
-                    Measured_D1_Efficacy_SEs <- matrix(Measured_D1_Data$Efficacy_SE, ncol = length(Measured_D1_Data$Efficacy_SE), nrow = n_Simulations, byrow = TRUE)
-                    SEs_deviated <- (D1_MC_Efficacies[[names(Drug2Data)[i]]] - Measured_D1_Efficacies) / Measured_D1_Efficacy_SEs
+                if(Drug1 == Drug2){
                   #Calculating simulated D2 viabilities based on the SE deviations from the simulated D1 viabilities
                     Measured_D2_Data <- Drug2Data[[names(Drug2Data)[i]]][,c("CellLine", "Efficacy", "Efficacy_SE")]
                     Measured_D2_Data <- Measured_D2_Data[match(colnames(SEs_deviated), Measured_D2_Data$CellLine),]
                     Measured_D2_Efficacies <- matrix(Measured_D2_Data$Efficacy, ncol = length(Measured_D2_Data$Efficacy), nrow = n_Simulations, byrow = TRUE, dimnames = list(NULL, Measured_D2_Data$CellLine))
                     Measured_D2_Efficacy_SEs <- matrix(Measured_D2_Data$Efficacy_SE, ncol = length(Measured_D2_Data$Efficacy_SE), nrow = n_Simulations, byrow = TRUE, dimnames = list(NULL, Measured_D2_Data$CellLine))
                     D2_MC_Efficacies[[i]] <- Measured_D2_Efficacies + (SEs_deviated * Measured_D2_Efficacy_SEs)
+                } else {
+                  #If Drug1 does not equal Drug2, randomly sampling
+                    D2_MC_Efficacies[[i]] <- apply(Drug2Data[[i]][,c("Efficacy", "Efficacy_SE")], 1, function(x){rnorm(n = n_Simulations, mean = x[1], sd = x[2])})
                 }
-              #If D2 drug is not in D1 therapy, randomly sampling
-                D2_MC_Efficacies[[i]] <- apply(Drug2Data[[i]][,c("Efficacy", "Efficacy_SE")], 1, function(x){rnorm(n = n_Simulations, mean = x[1], sd = x[2])})
             }
             names(D2_MC_Efficacies) <- names(Drug2Data)
-            if(exists("Measured_D1_Data")){
-              rm(Measured_D1_Data, Measured_D1_Efficacies, Measured_D1_Efficacy_SEs, Measured_D2_Data, Measured_D2_Efficacies, Measured_D2_Efficacy_SEs)
-            }
+            #Cleaning up
+              rm(Measured_D1_Data, Measured_D1_Efficacies, Measured_D1_Efficacy_SEs, SEs_deviated)
+              if(exists("Measured_D2_Data")){
+                rm(Measured_D2_Data, Measured_D2_Efficacies, Measured_D2_Efficacy_SEs)
+              }
           #Resampling cell lines for each simulation with replacement to account for the effect of random variation in cell line selection
             Selected_CCLs_Per_Sim <- t(apply(D1_MC_Efficacies[[1]], 1, function(x){return(sample(1:length(x), replace = TRUE))}))
             for(i in 1:length(D1_MC_Efficacies)){
@@ -650,8 +660,21 @@ IDAPredict.2drug <- function(Monotherapy_Data, Cell_Line_Name_Column, Drug_Name_
           #measured efficacies and SE's
             D1_MC_Efficacies <- as.list(NULL)
             for(i in 1:length(Drug1Data)){
-              D1_MC_Efficacies[[i]] <- apply(Drug1Data[[i]][,c("Efficacy", "Efficacy_SE")], 1, function(x){rnorm(n = n_Simulations, mean = x[1], sd = x[2])})
-              colnames(D1_MC_Efficacies[[i]]) <- Drug1Data[[i]]$CellLine
+              if(i == 1){
+                D1_MC_Efficacies[[i]] <- apply(Drug1Data[[i]][,c("Efficacy", "Efficacy_SE")], 1, function(x){rnorm(n = n_Simulations, mean = x[1], sd = x[2])})
+                colnames(D1_MC_Efficacies[[i]]) <- Drug1Data[[i]]$CellLine
+                Measured_D1_Data <- Drug1Data[[names(Drug1Data)[i]]][,c("CellLine", "Efficacy", "Efficacy_SE")]
+                Measured_D1_Data <- Measured_D1_Data[match(colnames(D1_MC_Efficacies[[1]]), Measured_D1_Data$CellLine),]
+                Measured_D1_Efficacies <- matrix(Measured_D1_Data$Efficacy, ncol = length(Measured_D1_Data$Efficacy), nrow = n_Simulations, byrow = TRUE)
+                Measured_D1_Efficacy_SEs <- matrix(Measured_D1_Data$Efficacy_SE, ncol = length(Measured_D1_Data$Efficacy_SE), nrow = n_Simulations, byrow = TRUE)
+                SEs_deviated <- (D1_MC_Efficacies[[1]] - Measured_D1_Efficacies) / Measured_D1_Efficacy_SEs
+              } else {
+                Measured_D1_Data <- Drug1Data[[names(Drug1Data)[i]]][,c("CellLine", "Efficacy", "Efficacy_SE")]
+                Measured_D1_Data <- Measured_D1_Data[match(colnames(SEs_deviated), Measured_D1_Data$CellLine),]
+                Measured_D1_Efficacies <- matrix(Measured_D1_Data$Efficacy, ncol = length(Measured_D1_Data$Efficacy), nrow = n_Simulations, byrow = TRUE, dimnames = list(NULL, Measured_D1_Data$CellLine))
+                Measured_D1_Efficacy_SEs <- matrix(Measured_D1_Data$Efficacy_SE, ncol = length(Measured_D1_Data$Efficacy_SE), nrow = n_Simulations, byrow = TRUE, dimnames = list(NULL, Measured_D1_Data$CellLine))
+                D1_MC_Efficacies[[i]] <- Measured_D1_Efficacies + (SEs_deviated * Measured_D1_Efficacy_SEs)
+              }
             }
             names(D1_MC_Efficacies) <- names(Drug1Data)
             D2_MC_Efficacies <- as.list(NULL)
@@ -661,27 +684,24 @@ IDAPredict.2drug <- function(Monotherapy_Data, Cell_Line_Name_Column, Drug_Name_
               #the measured value each simulated D1 viability fell, and matching that distance in
               #the simulated D2 viabilities. This is done because D1 and D2 viabilities are not independent in
               #this case--they will have come from the same dose-response curve.
-                if(names(Drug2Data)[i] %in% names(Drug1Data)){
-                  #Calculating the number of SEs away from the measured value each simulated value is for D1
-                    Measured_D1_Data <- Drug1Data[[names(Drug2Data)[i]]][,c("CellLine", "Efficacy", "Efficacy_SE")]
-                    Measured_D1_Data <- Measured_D1_Data[match(colnames(D1_MC_Efficacies[[names(Drug2Data)[i]]]), Measured_D1_Data$CellLine),]
-                    Measured_D1_Efficacies <- matrix(Measured_D1_Data$Efficacy, ncol = length(Measured_D1_Data$Efficacy), nrow = n_Simulations, byrow = TRUE)
-                    Measured_D1_Efficacy_SEs <- matrix(Measured_D1_Data$Efficacy_SE, ncol = length(Measured_D1_Data$Efficacy_SE), nrow = n_Simulations, byrow = TRUE)
-                    SEs_deviated <- (D1_MC_Efficacies[[names(Drug2Data)[i]]] - Measured_D1_Efficacies) / Measured_D1_Efficacy_SEs
+                if(Drug1 == Drug2){
                   #Calculating simulated D2 viabilities based on the SE deviations from the simulated D1 viabilities
                     Measured_D2_Data <- Drug2Data[[names(Drug2Data)[i]]][,c("CellLine", "Efficacy", "Efficacy_SE")]
                     Measured_D2_Data <- Measured_D2_Data[match(colnames(SEs_deviated), Measured_D2_Data$CellLine),]
                     Measured_D2_Efficacies <- matrix(Measured_D2_Data$Efficacy, ncol = length(Measured_D2_Data$Efficacy), nrow = n_Simulations, byrow = TRUE, dimnames = list(NULL, Measured_D2_Data$CellLine))
                     Measured_D2_Efficacy_SEs <- matrix(Measured_D2_Data$Efficacy_SE, ncol = length(Measured_D2_Data$Efficacy_SE), nrow = n_Simulations, byrow = TRUE, dimnames = list(NULL, Measured_D2_Data$CellLine))
                     D2_MC_Efficacies[[i]] <- Measured_D2_Efficacies + (SEs_deviated * Measured_D2_Efficacy_SEs)
+                } else {
+                  #If Drug1 does not equal Drug2, randomly sampling
+                    D2_MC_Efficacies[[i]] <- apply(Drug2Data[[i]][,c("Efficacy", "Efficacy_SE")], 1, function(x){rnorm(n = n_Simulations, mean = x[1], sd = x[2])})
                 }
-              #If D2 drug is not in D1 therapy, randomly sampling
-                D2_MC_Efficacies[[i]] <- apply(Drug2Data[[i]][,c("Efficacy", "Efficacy_SE")], 1, function(x){rnorm(n = n_Simulations, mean = x[1], sd = x[2])})
             }
             names(D2_MC_Efficacies) <- names(Drug2Data)
-            if(exists("Measured_D1_Data")){
-              rm(Measured_D1_Data, Measured_D1_Efficacies, Measured_D1_Efficacy_SEs, Measured_D2_Data, Measured_D2_Efficacies, Measured_D2_Efficacy_SEs)
-            }
+            #Cleaning up
+              rm(Measured_D1_Data, Measured_D1_Efficacies, Measured_D1_Efficacy_SEs, SEs_deviated)
+              if(exists("Measured_D2_Data")){
+                rm(Measured_D2_Data, Measured_D2_Efficacies, Measured_D2_Efficacy_SEs)
+              }
           #Resampling cell lines for each simulation with replacement to account for the effect of random variation in cell line selection
             Selected_CCLs_Per_Sim <- t(apply(D1_MC_Efficacies[[1]], 1, function(x){return(sample(1:length(x), replace = TRUE))}))
             for(i in 1:length(D1_MC_Efficacies)){
