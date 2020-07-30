@@ -380,7 +380,7 @@ IDAPredict.ControlPlusOne <- function(Monotherapy_Data, Cell_Line_Name_Column, D
     rm(Data)
 
   #Finding cell line overlap between all drugs
-    Control_Cell_Lines <- sort(unique(ControlData$D1$CellLine))
+    Control_Cell_Lines <- sort(unique(ControlData[[1]]$CellLine))
     Usable_CellLines <- sort(unique(Control_Cell_Lines[Control_Cell_Lines %in% Drug_to_AddData$CellLine]))
 
   #Checking again if at least 2 cell lines remain for all control drugs. If not, exiting with no
